@@ -1,0 +1,9 @@
+[package]
+name = "hayate-linux-fileview"
+version = "0.1.0"
+edition = "2024"
+description = "Fast file viewer for Linux — built on Hayate UI"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+hayate-ui = { path = "../GUI_kit" }
