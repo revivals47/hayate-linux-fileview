@@ -379,7 +379,7 @@ fn main() {
     let root: Box<dyn Widget> = Box::new(FileListWidget::new(Rc::clone(&state)));
 
     let title = format!("Hayate — {}", path.display());
-    if let Err(e) = App::new(title, 900, 700).run(root) {
+    if let Err(e) = App::new(title, 600, 400).run(root) {
         eprintln!("Error: {e}");
     }
 }
