@@ -8,6 +8,12 @@ use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
 const BAR_HEIGHT: f32 = 20.0;
+
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 { format!("{} B", bytes) }
+    else if bytes < 1024 * 1024 { format!("{:.1} KB", bytes as f64 / 1024.0) }
+    else { format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)) }
+}
 const BG_COLOR: (u8, u8, u8) = (40, 40, 45);
 
 /// Information needed to render the status bar.
@@ -16,6 +22,8 @@ pub struct StatusInfo<'a> {
     pub show_hidden: bool,
     pub selected_name: Option<&'a str>,
     pub selected_size: Option<String>,
+    pub selected_count: usize,
+    pub selected_total_size: u64,
     pub current_path: &'a std::path::Path,
 }
 
@@ -34,17 +42,18 @@ impl StatusBar {
 
     pub fn update(&mut self, info: &StatusInfo<'_>) {
         let hidden = if info.show_hidden { "on" } else { "off" };
-        let selected = match (info.selected_name, &info.selected_size) {
-            (Some(name), Some(size)) => format!(" | {}: {}", name, size),
-            (Some(name), None) => format!(" | {}/", name),
-            _ => String::new(),
+        let selected = if info.selected_count > 1 {
+            format!(" | {} selected ({})", info.selected_count, format_size(info.selected_total_size))
+        } else {
+            match (info.selected_name, &info.selected_size) {
+                (Some(name), Some(size)) => format!(" | {}: {}", name, size),
+                (Some(name), None) => format!(" | {}/", name),
+                _ => String::new(),
+            }
         };
         self.message = format!(
             "  {} items [hidden: {}]{} — {}",
-            info.item_count,
-            hidden,
-            selected,
-            info.current_path.display(),
+            info.item_count, hidden, selected, info.current_path.display(),
         );
     }
 }

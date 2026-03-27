@@ -1,10 +1,11 @@
 //! Virtualized file list widget using VirtualViewport + direct TextEngine rendering.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Instant;
 
 use tiny_skia::Color;
-use xkbcommon::xkb::Keysym;
 
 use hayate_ui::platform::keyboard::KeyState;
 use hayate_ui::render::{FontFamily, TextEngine, TextParams};
@@ -27,6 +28,7 @@ const COL_HEADER_ROW: usize = 2;
 const COL_SEP_ROW: usize = 3;
 const PARENT_ROW: usize = 4;
 const PADDING: f32 = 12.0;
+pub(crate) const JUMP_TIMEOUT_MS: u128 = 300;
 
 fn color_rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba8(r, g, b, 255)
@@ -35,11 +37,17 @@ fn color_rgb(r: u8, g: u8, b: u8) -> Color {
 // ── FileListWidget ──
 
 pub(crate) struct FileListWidget {
-    state: Rc<RefCell<FileViewState>>,
-    viewport: VirtualViewport,
+    pub(crate) state: Rc<RefCell<FileViewState>>,
+    pub(crate) viewport: VirtualViewport,
     engine: Rc<RefCell<TextEngine>>,
     width: f32,
-    height: f32,
+    pub(crate) height: f32,
+    ctrl_held: bool,
+    shift_held: bool,
+    pub(crate) clipboard: Vec<PathBuf>,
+    pub(crate) jump_buffer: String,
+    pub(crate) jump_last_input: Option<Instant>,
+    pub(crate) search_mode: bool,
 }
 
 impl FileListWidget {
@@ -53,8 +61,14 @@ impl FileListWidget {
             state,
             viewport,
             engine,
+            clipboard: Vec::new(),
             width: 0.0,
             height: 0.0,
+            ctrl_held: false,
+            shift_held: false,
+            jump_buffer: String::new(),
+            jump_last_input: None,
+            search_mode: false,
         }
     }
 
@@ -67,13 +81,18 @@ impl FileListWidget {
         self.refresh_viewport();
     }
 
-    fn refresh_viewport(&mut self) {
-        let count = self.state.borrow().entries.len();
+    pub(crate) fn refresh_viewport(&mut self) {
+        let state = self.state.borrow();
+        let count = match &state.filtered_indices {
+            Some(fi) => fi.len(),
+            None => state.entries.len(),
+        };
+        drop(state);
         self.viewport.on_total_changed(FIXED_ROWS + count);
     }
 
-    fn ensure_selected_visible(&mut self) {
-        if let Some(idx) = self.state.borrow().selected_index {
+    pub(crate) fn ensure_cursor_visible(&mut self) {
+        if let Some(idx) = self.state.borrow().cursor {
             self.viewport.scroll_to_item(FIXED_ROWS + idx);
         }
     }
@@ -89,12 +108,14 @@ impl FileListWidget {
             COL_HEADER_ROW => Some(YHit::ColumnHeader),
             PARENT_ROW => Some(YHit::Parent),
             r if r >= FIXED_ROWS => {
-                let idx = r - FIXED_ROWS;
-                if idx < self.state.borrow().entries.len() {
-                    Some(YHit::Entry(idx))
-                } else {
-                    None
-                }
+                let vis_idx = r - FIXED_ROWS;
+                let state = self.state.borrow();
+                let entry_idx = match &state.filtered_indices {
+                    Some(fi) => fi.get(vis_idx).copied(),
+                    None if vis_idx < state.entries.len() => Some(vis_idx),
+                    _ => None,
+                };
+                entry_idx.map(YHit::Entry)
             }
             _ => None,
         }
@@ -108,6 +129,21 @@ impl FileListWidget {
             SortColumn::Size
         } else {
             SortColumn::Name
+        }
+    }
+
+    pub(crate) fn jump_to_prefix(&mut self) {
+        let st = self.state.borrow();
+        let prefix = self.jump_buffer.to_lowercase();
+        let count = st.entries.len();
+        if count == 0 || prefix.is_empty() { return; }
+        let start = st.cursor.map(|c| c + 1).unwrap_or(0);
+        let found = (0..count).map(|i| (start + i) % count)
+            .find(|&i| st.entries[i].name.to_lowercase().starts_with(&prefix));
+        drop(st);
+        if let Some(idx) = found {
+            self.state.borrow_mut().select_single(idx);
+            self.ensure_cursor_visible();
         }
     }
 
@@ -174,7 +210,11 @@ impl Widget for FileListWidget {
             match virt_idx {
                 HEADER_ROW => {
                     let hidden = if state.show_hidden { " [H]" } else { "" };
-                    let text = format!("  {}{}", state.current_path.display(), hidden);
+                    let search_indicator = match &state.search_query {
+                        Some(q) => format!("  [Search: {}]", q),
+                        None => String::new(),
+                    };
+                    let text = format!("  {}{}{}", state.current_path.display(), hidden, search_indicator);
                     Self::draw_text_row(
                         &mut engine, canvas, stride, &rect, PADDING, y,
                         &text, 16.0, color_rgb(100, 180, 255), max_w, self.height,
@@ -208,12 +248,19 @@ impl Widget for FileListWidget {
                     );
                 }
                 _ => {
-                    let entry_idx = virt_idx - FIXED_ROWS;
+                    let vis_idx = virt_idx - FIXED_ROWS;
+                    let entry_idx = match &state.filtered_indices {
+                        Some(fi) => {
+                            if vis_idx >= fi.len() { continue; }
+                            fi[vis_idx]
+                        }
+                        None => vis_idx,
+                    };
                     if entry_idx >= state.entries.len() {
                         continue;
                     }
                     let entry = &state.entries[entry_idx];
-                    let selected = state.selected_index == Some(entry_idx);
+                    let selected = state.is_selected(entry_idx);
                     let color = if selected {
                         color_rgb(80, 200, 255)
                     } else if entry.is_dir {
@@ -236,6 +283,11 @@ impl Widget for FileListWidget {
     }
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
+        // Track modifier keys for pointer events
+        if let WidgetEvent::Key(ke) = event {
+            self.ctrl_held = ke.modifiers.ctrl;
+            self.shift_held = ke.modifiers.shift;
+        }
         match event {
             WidgetEvent::Scroll { dy, .. } => {
                 self.viewport.scroll(*dy, 1.0 / 60.0);
@@ -257,13 +309,20 @@ impl Widget for FileListWidget {
                     }
                     Some(YHit::Entry(idx)) => {
                         let mut state = self.state.borrow_mut();
-                        if idx < state.entries.len() && state.entries[idx].is_dir {
+                        if idx < state.entries.len() && state.entries[idx].is_dir && !self.ctrl_held && !self.shift_held {
                             let path = state.current_path.join(&state.entries[idx].name);
                             state.navigate(path);
                             drop(state);
                             self.refresh_viewport();
                         } else if idx < state.entries.len() {
-                            state.selected_index = Some(idx);
+                            if self.ctrl_held {
+                                state.toggle_select(idx);
+                            } else if self.shift_held {
+                                let anchor = state.anchor.unwrap_or(0);
+                                state.select_range(anchor, idx);
+                            } else {
+                                state.select_single(idx);
+                            }
                         }
                         EventResponse::Handled
                     }
@@ -272,84 +331,7 @@ impl Widget for FileListWidget {
             }
 
             WidgetEvent::Key(ke) if ke.state == KeyState::Pressed => {
-                if ke.modifiers.ctrl && ke.keysym == Keysym::h {
-                    self.state.borrow_mut().toggle_hidden();
-                    self.refresh_viewport();
-                    return EventResponse::Handled;
-                }
-                if ke.keysym == Keysym::BackSpace {
-                    self.state.borrow_mut().go_parent();
-                    self.refresh_viewport();
-                    return EventResponse::Handled;
-                }
-                if ke.keysym == Keysym::Up || ke.keysym == Keysym::Down {
-                    let mut state = self.state.borrow_mut();
-                    let count = state.entries.len();
-                    if count > 0 {
-                        let new_idx = match (state.selected_index, ke.keysym) {
-                            (None, Keysym::Down) => 0,
-                            (None, _) => count - 1,
-                            (Some(cur), Keysym::Down) => (cur + 1).min(count - 1),
-                            (Some(cur), _) => cur.saturating_sub(1),
-                        };
-                        state.selected_index = Some(new_idx);
-                        drop(state);
-                        self.ensure_selected_visible();
-                    }
-                    return EventResponse::Handled;
-                }
-                if ke.keysym == Keysym::Return {
-                    let mut state = self.state.borrow_mut();
-                    if let Some(idx) = state.selected_index {
-                        if idx < state.entries.len() && state.entries[idx].is_dir {
-                            let path = state.current_path.join(&state.entries[idx].name);
-                            state.navigate(path);
-                            drop(state);
-                            self.refresh_viewport();
-                            return EventResponse::Handled;
-                        }
-                    }
-                    return EventResponse::Ignored;
-                }
-                if ke.modifiers.ctrl {
-                    let col = match ke.keysym {
-                        Keysym::_1 => Some(SortColumn::Name),
-                        Keysym::_2 => Some(SortColumn::Size),
-                        Keysym::_3 => Some(SortColumn::Modified),
-                        _ => None,
-                    };
-                    if let Some(c) = col {
-                        self.state.borrow_mut().set_sort(c);
-                        self.refresh_viewport();
-                        return EventResponse::Handled;
-                    }
-                }
-                if ke.modifiers.ctrl && ke.keysym == Keysym::v {
-                    eprintln!(
-                        "[file_ops] Ctrl+V: paste into {} (stub)",
-                        self.state.borrow().current_path.display()
-                    );
-                    return EventResponse::Handled;
-                }
-                if ke.keysym == Keysym::Delete {
-                    eprintln!(
-                        "[file_ops] Delete: request delete in {} (stub)",
-                        self.state.borrow().current_path.display()
-                    );
-                    return EventResponse::Handled;
-                }
-                let delta = match ke.keysym {
-                    Keysym::Page_Up => Some(-self.height * 0.8),
-                    Keysym::Page_Down => Some(self.height * 0.8),
-                    Keysym::Home => Some(-self.viewport.scroll_offset()),
-                    Keysym::End => Some(self.viewport.content_height()),
-                    _ => None,
-                };
-                if let Some(d) = delta {
-                    self.viewport.scroll(d, 1.0 / 60.0);
-                    return EventResponse::Handled;
-                }
-                EventResponse::Ignored
+                crate::keybindings::handle_key_event(self, ke)
             }
 
             _ => EventResponse::Ignored,

@@ -128,6 +128,61 @@ pub fn handle_uri_drop(uri_list: &str, dest_dir: &Path) -> FileOpResult {
     copy_batch(&paths, dest_dir)
 }
 
+/// Move a file or directory to the XDG Trash (freedesktop.org spec).
+///
+/// Creates `$HOME/.local/share/Trash/files/` and `info/` if needed.
+/// Writes a `.trashinfo` file with the original path and deletion timestamp.
+pub fn trash(path: &Path) -> io::Result<()> {
+    let home = std::env::var("HOME")
+        .map_err(|_| io::Error::new(io::ErrorKind::NotFound, "$HOME not set"))?;
+    let trash_files = PathBuf::from(&home).join(".local/share/Trash/files");
+    let trash_info = PathBuf::from(&home).join(".local/share/Trash/info");
+    fs::create_dir_all(&trash_files)?;
+    fs::create_dir_all(&trash_info)?;
+
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
+    let dest = unique_path(&trash_files.join(name));
+    let dest_name = dest
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+
+    fs::rename(path, &dest)?;
+
+    let now = format_iso8601_now();
+    let info_path = trash_info.join(format!("{}.trashinfo", dest_name));
+    fs::write(
+        &info_path,
+        format!(
+            "[Trash Info]\nPath={}\nDeletionDate={}\n",
+            path.display(),
+            now
+        ),
+    )?;
+    Ok(())
+}
+
+fn format_iso8601_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let time_t = secs as libc::time_t;
+    let mut tm = unsafe { std::mem::zeroed::<libc::tm>() };
+    unsafe { libc::localtime_r(&time_t, &mut tm) };
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min,
+        tm.tm_sec,
+    )
+}
+
 // ── helpers ──
 
 fn run_batch<F>(sources: &[PathBuf], mut op: F) -> FileOpResult

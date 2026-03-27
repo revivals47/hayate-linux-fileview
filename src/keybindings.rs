@@ -1,0 +1,206 @@
+//! Keyboard event handling extracted from FileListWidget.
+
+use std::path::PathBuf;
+use std::time::Instant;
+
+use xkbcommon::xkb::Keysym;
+
+use hayate_ui::widget::core::EventResponse;
+use hayate_ui::platform::keyboard::KeyEvent;
+
+use crate::entry::SortColumn;
+use crate::file_list::{FileListWidget, JUMP_TIMEOUT_MS};
+
+pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventResponse {
+    // ── Search mode ──
+    if w.search_mode {
+        match ke.keysym {
+            Keysym::Escape => {
+                w.search_mode = false;
+                w.state.borrow_mut().set_search(None);
+                w.refresh_viewport();
+            }
+            Keysym::Return => { w.search_mode = false; }
+            Keysym::BackSpace => {
+                let mut st = w.state.borrow_mut();
+                if let Some(ref mut q) = st.search_query { q.pop(); }
+                st.update_filter();
+                drop(st);
+                w.refresh_viewport();
+            }
+            _ => {
+                if let Some(ref text) = ke.utf8 {
+                    let mut st = w.state.borrow_mut();
+                    for ch in text.chars().filter(|c| !c.is_control()) {
+                        if let Some(ref mut q) = st.search_query { q.push(ch); }
+                    }
+                    st.update_filter();
+                    if let Some(ref fi) = st.filtered_indices {
+                        if let Some(&first) = fi.first() { st.select_single(first); }
+                    }
+                    drop(st);
+                    w.refresh_viewport();
+                    w.ensure_cursor_visible();
+                }
+            }
+        }
+        return EventResponse::Handled;
+    }
+
+    if ke.modifiers.ctrl && ke.keysym == Keysym::f {
+        w.search_mode = true;
+        w.state.borrow_mut().set_search(Some(String::new()));
+        return EventResponse::Handled;
+    }
+    if ke.keysym == Keysym::Escape && w.state.borrow().search_query.is_some() {
+        w.state.borrow_mut().set_search(None);
+        w.refresh_viewport();
+        return EventResponse::Handled;
+    }
+    if ke.modifiers.ctrl && ke.keysym == Keysym::h {
+        w.state.borrow_mut().toggle_hidden();
+        w.refresh_viewport();
+        return EventResponse::Handled;
+    }
+    if ke.keysym == Keysym::BackSpace {
+        w.state.borrow_mut().go_parent();
+        w.refresh_viewport();
+        return EventResponse::Handled;
+    }
+    if ke.keysym == Keysym::Up || ke.keysym == Keysym::Down {
+        let mut state = w.state.borrow_mut();
+        let count = state.entries.len();
+        if count > 0 {
+            let new_idx = match (state.cursor, ke.keysym) {
+                (None, Keysym::Down) => 0,
+                (None, _) => count - 1,
+                (Some(cur), Keysym::Down) => (cur + 1).min(count - 1),
+                (Some(cur), _) => cur.saturating_sub(1),
+            };
+            if ke.modifiers.shift {
+                let anchor = state.anchor.unwrap_or(new_idx);
+                state.select_range(anchor, new_idx);
+            } else {
+                state.select_single(new_idx);
+            }
+            drop(state);
+            w.ensure_cursor_visible();
+        }
+        return EventResponse::Handled;
+    }
+    if ke.modifiers.ctrl && ke.keysym == Keysym::a {
+        w.state.borrow_mut().select_all();
+        return EventResponse::Handled;
+    }
+    if ke.keysym == Keysym::Return {
+        let mut state = w.state.borrow_mut();
+        if let Some(idx) = state.cursor {
+            if idx < state.entries.len() && state.entries[idx].is_dir {
+                let path = state.current_path.join(&state.entries[idx].name);
+                state.navigate(path);
+                drop(state);
+                w.refresh_viewport();
+                return EventResponse::Handled;
+            }
+        }
+        return EventResponse::Ignored;
+    }
+    if ke.modifiers.ctrl {
+        let col = match ke.keysym {
+            Keysym::_1 => Some(SortColumn::Name),
+            Keysym::_2 => Some(SortColumn::Size),
+            Keysym::_3 => Some(SortColumn::Modified),
+            _ => None,
+        };
+        if let Some(c) = col {
+            w.state.borrow_mut().set_sort(c);
+            w.refresh_viewport();
+            return EventResponse::Handled;
+        }
+    }
+    if ke.modifiers.ctrl && ke.keysym == Keysym::c {
+        let state = w.state.borrow();
+        let paths: Vec<PathBuf> = state.selected_indices().iter()
+            .filter(|&&i| i < state.entries.len())
+            .map(|&i| state.current_path.join(&state.entries[i].name))
+            .collect();
+        let count = paths.len();
+        drop(state);
+        w.clipboard = paths;
+        eprintln!("[file_ops] Copied {} file(s) to clipboard", count);
+        return EventResponse::Handled;
+    }
+    if ke.modifiers.ctrl && ke.keysym == Keysym::v {
+        if w.clipboard.is_empty() {
+            eprintln!("[file_ops] Ctrl+V: clipboard is empty");
+        } else {
+            let dest = w.state.borrow().current_path.clone();
+            let mut ok = 0usize;
+            for src in &w.clipboard {
+                match crate::file_ops::copy_to(src, &dest) {
+                    Ok(_) => ok += 1,
+                    Err(e) => eprintln!("[file_ops] copy error: {}: {}", src.display(), e),
+                }
+            }
+            eprintln!("[file_ops] Pasted {}/{} file(s)", ok, w.clipboard.len());
+            w.state.borrow_mut().refresh();
+            w.refresh_viewport();
+        }
+        return EventResponse::Handled;
+    }
+    if ke.keysym == Keysym::Delete {
+        let state = w.state.borrow();
+        let paths: Vec<PathBuf> = state.selected_indices().iter()
+            .filter(|&&i| i < state.entries.len())
+            .map(|&i| state.current_path.join(&state.entries[i].name))
+            .collect();
+        drop(state);
+        if paths.is_empty() {
+            eprintln!("[file_ops] Delete: no files selected");
+        } else {
+            let mut ok = 0usize;
+            for p in &paths {
+                match crate::file_ops::trash(p) {
+                    Ok(()) => ok += 1,
+                    Err(e) => eprintln!("[file_ops] trash error: {}: {}", p.display(), e),
+                }
+            }
+            eprintln!("[file_ops] Trashed {}/{} file(s)", ok, paths.len());
+            w.state.borrow_mut().refresh();
+            w.refresh_viewport();
+        }
+        return EventResponse::Handled;
+    }
+    // Scroll keys
+    let delta = match ke.keysym {
+        Keysym::Page_Up => Some(-w.height * 0.8),
+        Keysym::Page_Down => Some(w.height * 0.8),
+        Keysym::Home => Some(-w.viewport.scroll_offset()),
+        Keysym::End => Some(w.viewport.content_height()),
+        _ => None,
+    };
+    if let Some(d) = delta {
+        w.viewport.scroll(d, 1.0 / 60.0);
+        return EventResponse::Handled;
+    }
+    // Incremental jump
+    if !ke.modifiers.ctrl && !ke.modifiers.alt {
+        if let Some(ref text) = ke.utf8 {
+            for ch in text.chars() {
+                if ch.is_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
+                    let now = Instant::now();
+                    if let Some(last) = w.jump_last_input {
+                        if now.duration_since(last).as_millis() > JUMP_TIMEOUT_MS {
+                            w.jump_buffer.clear();
+                        }
+                    }
+                    w.jump_buffer.push(ch);
+                    w.jump_last_input = Some(now);
+                    w.jump_to_prefix();
+                    return EventResponse::Handled;
+                }
+            }
+        }
+    }
+    EventResponse::Ignored
+}

@@ -1,6 +1,7 @@
 mod entry;
 mod file_list;
 mod file_ops;
+mod keybindings;
 mod preview;
 mod scroll;
 mod sidebar;

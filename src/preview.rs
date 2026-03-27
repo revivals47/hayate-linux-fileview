@@ -64,7 +64,7 @@ impl PreviewPane {
         // calling &mut self methods (load_file_preview).
         let (selected_info, path) = {
             let state = self.state.borrow();
-            match state.selected_index {
+            match state.cursor {
                 None => (None, None),
                 Some(idx) if idx >= state.entries.len() => (None, None),
                 Some(idx) => {

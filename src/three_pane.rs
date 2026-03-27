@@ -43,6 +43,8 @@ impl ThreePaneWidget {
                 show_hidden: st.show_hidden,
                 selected_name: None,
                 selected_size: None,
+                selected_count: 0,
+                selected_total_size: 0,
                 current_path: &st.current_path,
             });
         }
@@ -60,7 +62,12 @@ impl ThreePaneWidget {
 
     fn update_status(&mut self) {
         let state = self.file_list.state().borrow();
-        let (selected_name, selected_size) = match state.selected_index {
+        let selected_count = state.selected.len();
+        let selected_total_size: u64 = state.selected.iter()
+            .filter_map(|&i| state.entries.get(i))
+            .map(|e| e.size)
+            .sum();
+        let (selected_name, selected_size) = match state.cursor {
             Some(idx) if idx < state.entries.len() => {
                 let e = &state.entries[idx];
                 let size = if e.is_dir { None } else { Some(e.format_size()) };
@@ -73,6 +80,8 @@ impl ThreePaneWidget {
             show_hidden: state.show_hidden,
             selected_name,
             selected_size,
+            selected_count,
+            selected_total_size,
             current_path: &state.current_path,
         });
     }

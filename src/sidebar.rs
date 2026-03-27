@@ -208,17 +208,20 @@ impl Widget for SidebarWidget {
             }
         }
 
-        // Paint text rows
-        let widgets = self.build_widgets();
-        for (i, w) in widgets.iter().enumerate() {
+        // Paint text rows (layout each widget before painting)
+        let mut widgets = self.build_widgets();
+        let row_width = self.width - PADDING * 2.0;
+        let row_constraints = Constraints::tight(row_width, ROW_HEIGHT);
+        for (i, w) in widgets.iter_mut().enumerate() {
             let row_y = rect.y + PADDING + i as f32 * ROW_HEIGHT;
             if row_y + ROW_HEIGHT > rect.y + rect.height {
                 break;
             }
+            w.layout(&row_constraints);
             let row_rect = ItemRect::new(
                 rect.x + PADDING,
                 row_y,
-                self.width - PADDING * 2.0,
+                row_width,
                 ROW_HEIGHT,
             );
             w.paint(canvas, row_rect, stride);
