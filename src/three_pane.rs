@@ -7,15 +7,18 @@ use hayate_ui::render::TextEngine;
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
+use crate::breadcrumb::BreadcrumbWidget;
 use crate::file_list::FileListWidget;
 use crate::preview::PreviewPane;
 use crate::sidebar::SidebarWidget;
 use crate::state::FileViewState;
 use crate::status_bar::{StatusBar, StatusInfo};
 
+const BREADCRUMB_HEIGHT: f32 = 24.0;
 const STATUS_HEIGHT: f32 = 20.0;
 
 pub(crate) struct ThreePaneWidget {
+    breadcrumb: BreadcrumbWidget,
     sidebar: SidebarWidget,
     file_list: FileListWidget,
     preview: PreviewPane,
@@ -31,6 +34,7 @@ impl ThreePaneWidget {
         state: Rc<RefCell<FileViewState>>,
         engine: Rc<RefCell<TextEngine>>,
     ) -> Self {
+        let breadcrumb = BreadcrumbWidget::new(Rc::clone(&state), engine.clone());
         let sidebar = SidebarWidget::new(Rc::clone(&state), engine.clone());
         let file_list = FileListWidget::new(Rc::clone(&state));
         let preview = PreviewPane::new(Rc::clone(&state), engine.clone());
@@ -49,6 +53,7 @@ impl ThreePaneWidget {
             });
         }
         Self {
+            breadcrumb,
             sidebar,
             file_list,
             preview,
@@ -90,7 +95,16 @@ impl ThreePaneWidget {
 impl Widget for ThreePaneWidget {
     fn layout(&mut self, constraints: &Constraints) -> Size {
         let total_width = constraints.max_width;
-        let content_height = constraints.max_height - STATUS_HEIGHT;
+        let content_height = constraints.max_height - BREADCRUMB_HEIGHT - STATUS_HEIGHT;
+
+        // Breadcrumb bar (full width, top)
+        let bc_c = Constraints {
+            min_width: total_width,
+            max_width: total_width,
+            min_height: BREADCRUMB_HEIGHT,
+            max_height: BREADCRUMB_HEIGHT,
+        };
+        self.breadcrumb.layout(&bc_c);
 
         self.sidebar_width = 150.0_f32.min(total_width * 0.2);
         let remaining = total_width - self.sidebar_width;
@@ -133,27 +147,33 @@ impl Widget for ThreePaneWidget {
     }
 
     fn paint(&self, canvas: &mut [u8], rect: ItemRect, stride: u32) {
-        let content_height = rect.height - STATUS_HEIGHT;
+        let content_height = rect.height - BREADCRUMB_HEIGHT - STATUS_HEIGHT;
+        let pane_y = rect.y + BREADCRUMB_HEIGHT;
+
+        // Breadcrumb bar (full width, top)
+        let bc_rect = ItemRect::new(rect.x, rect.y, rect.width, BREADCRUMB_HEIGHT);
+        self.breadcrumb.paint(canvas, bc_rect, stride);
 
         // Sidebar
         let sidebar_rect =
-            ItemRect::new(rect.x, rect.y, self.sidebar_width, content_height);
+            ItemRect::new(rect.x, pane_y, self.sidebar_width, content_height);
         self.sidebar.paint(canvas, sidebar_rect, stride);
 
         // File list
         let list_x = rect.x + self.sidebar_width;
-        let list_rect = ItemRect::new(list_x, rect.y, self.list_width, content_height);
+        let list_rect = ItemRect::new(list_x, pane_y, self.list_width, content_height);
         self.file_list.paint(canvas, list_rect, stride);
 
         // Preview
         let preview_x = list_x + self.list_width;
         let preview_rect =
-            ItemRect::new(preview_x, rect.y, self.preview_width, content_height);
+            ItemRect::new(preview_x, pane_y, self.preview_width, content_height);
         self.preview.paint(canvas, preview_rect, stride);
 
         // Status bar (full width, bottom)
+        let status_y = pane_y + content_height;
         let status_rect =
-            ItemRect::new(rect.x, rect.y + content_height, rect.width, STATUS_HEIGHT);
+            ItemRect::new(rect.x, status_y, rect.width, STATUS_HEIGHT);
         self.status_bar.paint(canvas, status_rect, stride);
     }
 
@@ -167,11 +187,30 @@ impl Widget for ThreePaneWidget {
             _ => {}
         }
 
-        // Route pointer press by x coordinate
+        // Route pointer press by y then x coordinate
         if let WidgetEvent::PointerPress { x, y, button, modifiers, .. } = event {
-            if *x < self.sidebar_width {
-                let result = self.sidebar.event(event);
+            // Breadcrumb bar (top strip)
+            if *y < BREADCRUMB_HEIGHT {
+                let result = self.breadcrumb.event(event);
                 if matches!(result, EventResponse::Handled) {
+                    self.file_list.rebuild();
+                    self.preview.update_preview();
+                    self.update_status();
+                }
+                return result;
+            }
+            // Adjust y for pane area (below breadcrumb)
+            let pane_y = *y - BREADCRUMB_HEIGHT;
+            if *x < self.sidebar_width {
+                let adjusted = WidgetEvent::PointerPress {
+                    x: *x,
+                    y: pane_y,
+                    button: *button,
+                    modifiers: *modifiers,
+                };
+                let result = self.sidebar.event(&adjusted);
+                if matches!(result, EventResponse::Handled) {
+                    self.breadcrumb.update_segments();
                     self.file_list.rebuild();
                     self.preview.update_preview();
                     self.update_status();
@@ -182,12 +221,13 @@ impl Widget for ThreePaneWidget {
             if *x < list_end {
                 let adjusted = WidgetEvent::PointerPress {
                     x: *x - self.sidebar_width,
-                    y: *y,
+                    y: pane_y,
                     button: *button,
                     modifiers: *modifiers,
                 };
                 let result = self.file_list.event(&adjusted);
                 if matches!(result, EventResponse::Handled) {
+                    self.breadcrumb.update_segments();
                     self.preview.update_preview();
                     self.update_status();
                 }
@@ -202,7 +242,6 @@ impl Widget for ThreePaneWidget {
             if self.last_pointer_x >= list_end {
                 return self.preview.event(event);
             }
-            // File list area scroll
             let result = self.file_list.event(event);
             if matches!(result, EventResponse::Handled) {
                 self.preview.update_preview();
@@ -211,9 +250,14 @@ impl Widget for ThreePaneWidget {
             return result;
         }
 
-        // Keyboard events → file list
+        // Keyboard events → breadcrumb first (Ctrl+L), then file list
+        let bc_result = self.breadcrumb.event(event);
+        if matches!(bc_result, EventResponse::Handled) {
+            return bc_result;
+        }
         let result = self.file_list.event(event);
         if matches!(result, EventResponse::Handled) {
+            self.breadcrumb.update_segments();
             self.preview.update_preview();
             self.update_status();
         }

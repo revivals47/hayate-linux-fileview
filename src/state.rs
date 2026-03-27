@@ -9,6 +9,9 @@ use hayate_ui::render::TextEngine;
 
 use crate::entry::{DirEntry, SortColumn, SortOrder, read_dir_sorted};
 
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum ViewMode { Detail, List, Compact }
+
 pub(crate) struct FileViewState {
     pub(crate) current_path: PathBuf,
     pub(crate) show_hidden: bool,
@@ -19,6 +22,7 @@ pub(crate) struct FileViewState {
     pub(crate) sort_column: SortColumn,
     pub(crate) sort_order: SortOrder,
     pub(crate) engine: Rc<RefCell<TextEngine>>,
+    pub(crate) view_mode: ViewMode,
     pub(crate) search_query: Option<String>,
     pub(crate) filtered_indices: Option<Vec<usize>>,
 }
@@ -39,6 +43,7 @@ impl FileViewState {
             sort_column,
             sort_order,
             engine,
+            view_mode: ViewMode::Detail,
             search_query: None,
             filtered_indices: None,
         }
@@ -123,6 +128,14 @@ impl FileViewState {
     pub(crate) fn toggle_hidden(&mut self) {
         self.show_hidden = !self.show_hidden;
         self.refresh();
+    }
+
+    pub(crate) fn cycle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Detail => ViewMode::List,
+            ViewMode::List => ViewMode::Compact,
+            ViewMode::Compact => ViewMode::Detail,
+        };
     }
 
     pub(crate) fn set_search(&mut self, query: Option<String>) {

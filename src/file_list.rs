@@ -16,11 +16,13 @@ use hayate_ui::scroll::viewport::VirtualViewport;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
 use crate::entry::SortColumn;
-use crate::state::FileViewState;
+use crate::state::{FileViewState, ViewMode};
 
 // ── Layout constants ──
 
 const ROW_HEIGHT: f32 = 18.0;
+const LIST_ROW_HEIGHT: f32 = 14.0;
+const COMPACT_COLS: usize = 3;
 /// Fixed rows: header, separator, column header, column separator, parent (..)
 const FIXED_ROWS: usize = 5;
 const HEADER_ROW: usize = 0;
@@ -91,12 +93,16 @@ impl FileListWidget {
 
     pub(crate) fn refresh_viewport(&mut self) {
         let state = self.state.borrow();
-        let count = match &state.filtered_indices {
+        let entry_count = match &state.filtered_indices {
             Some(fi) => fi.len(),
             None => state.entries.len(),
         };
+        let virtual_rows = match state.view_mode {
+            ViewMode::Compact => (entry_count + COMPACT_COLS - 1) / COMPACT_COLS.max(1),
+            _ => entry_count,
+        };
         drop(state);
-        self.viewport.on_total_changed(FIXED_ROWS + count);
+        self.viewport.on_total_changed(FIXED_ROWS + virtual_rows);
         self.text_cache.borrow_mut().clear();
     }
 
@@ -106,19 +112,27 @@ impl FileListWidget {
         }
     }
 
-    /// Map viewport-space Y to a hit target.
+    /// Map viewport-space Y (and X for Compact) to a hit target.
     fn y_to_hit(&self, y: f32) -> Option<YHit> {
+        self.y_x_to_hit(y, 0.0)
+    }
+
+    fn y_x_to_hit(&self, y: f32, x: f32) -> Option<YHit> {
         let content_y = y + self.viewport.scroll_offset();
-        if content_y < 0.0 {
-            return None;
-        }
+        if content_y < 0.0 { return None; }
         let row = (content_y / ROW_HEIGHT) as usize;
         match row {
             COL_HEADER_ROW => Some(YHit::ColumnHeader),
             PARENT_ROW => Some(YHit::Parent),
             r if r >= FIXED_ROWS => {
-                let vis_idx = r - FIXED_ROWS;
+                let virt_row = r - FIXED_ROWS;
                 let state = self.state.borrow();
+                let vis_idx = if state.view_mode == ViewMode::Compact {
+                    let col = ((x - PADDING).max(0.0) / (self.width / COMPACT_COLS as f32)) as usize;
+                    virt_row * COMPACT_COLS + col.min(COMPACT_COLS - 1)
+                } else {
+                    virt_row
+                };
                 let entry_idx = match &state.filtered_indices {
                     Some(fi) => fi.get(vis_idx).copied(),
                     None if vis_idx < state.entries.len() => Some(vis_idx),
@@ -262,35 +276,66 @@ impl Widget for FileListWidget {
                     );
                 }
                 _ => {
-                    let vis_idx = virt_idx - FIXED_ROWS;
-                    let entry_idx = match &state.filtered_indices {
-                        Some(fi) => {
-                            if vis_idx >= fi.len() { continue; }
-                            fi[vis_idx]
+                    let virt_row = virt_idx - FIXED_ROWS;
+                    match state.view_mode {
+                        ViewMode::Detail => {
+                            let entry_idx = resolve_vis_idx(&state, virt_row);
+                            let Some(entry_idx) = entry_idx else { continue };
+                            let entry = &state.entries[entry_idx];
+                            let selected = state.is_selected(entry_idx);
+                            let color = entry_color(selected, entry.is_dir);
+                            let line = if selected {
+                                format!("▶ {}", entry.display_line().trim_start())
+                            } else {
+                                entry.display_line()
+                            };
+                            Self::draw_text_row(&self.text_cache,
+                                &mut engine, canvas, stride, &rect, PADDING, y,
+                                &line, 11.0, color, max_w, self.height,
+                            );
                         }
-                        None => vis_idx,
-                    };
-                    if entry_idx >= state.entries.len() {
-                        continue;
+                        ViewMode::List => {
+                            let entry_idx = resolve_vis_idx(&state, virt_row);
+                            let Some(entry_idx) = entry_idx else { continue };
+                            let entry = &state.entries[entry_idx];
+                            let selected = state.is_selected(entry_idx);
+                            let color = entry_color(selected, entry.is_dir);
+                            let icon = if entry.is_dir { "📁 " } else { "   " };
+                            let name: String = entry.name.chars().take(40).collect();
+                            let line = if selected {
+                                format!("▶ {}{}", icon.trim_start(), name)
+                            } else {
+                                format!("{}{}", icon, name)
+                            };
+                            Self::draw_text_row(&self.text_cache,
+                                &mut engine, canvas, stride, &rect, PADDING, y,
+                                &line, 11.0, color, max_w, self.height,
+                            );
+                        }
+                        ViewMode::Compact => {
+                            let col_w = (self.width - PADDING * 2.0) / COMPACT_COLS as f32;
+                            for col in 0..COMPACT_COLS {
+                                let vis_idx = virt_row * COMPACT_COLS + col;
+                                let entry_idx = resolve_vis_idx(&state, vis_idx);
+                                let Some(entry_idx) = entry_idx else { continue };
+                                let entry = &state.entries[entry_idx];
+                                let selected = state.is_selected(entry_idx);
+                                let color = entry_color(selected, entry.is_dir);
+                                let icon = if entry.is_dir { "📁 " } else { "   " };
+                                let name: String = entry.name.chars().take(14).collect();
+                                let line = if selected {
+                                    format!("▶{}{}", icon.trim_start(), name)
+                                } else {
+                                    format!("{}{}", icon, name)
+                                };
+                                let cx = PADDING + col as f32 * col_w;
+                                Self::draw_text_row(&self.text_cache,
+                                    &mut engine, canvas, stride, &rect, cx, y,
+                                    &line, 10.0, color, col_w, self.height,
+                                );
+                            }
+                        }
                     }
-                    let entry = &state.entries[entry_idx];
-                    let selected = state.is_selected(entry_idx);
-                    let color = if selected {
-                        color_rgb(80, 200, 255)
-                    } else if entry.is_dir {
-                        color_rgb(220, 180, 80)
-                    } else {
-                        color_rgb(190, 190, 190)
-                    };
-                    let line = if selected {
-                        format!("▶ {}", entry.display_line().trim_start())
-                    } else {
-                        entry.display_line()
-                    };
-                    Self::draw_text_row(&self.text_cache, 
-                        &mut engine, canvas, stride, &rect, PADDING, y,
-                        &line, 11.0, color, max_w, self.height,
-                    );
                 }
             }
         }
@@ -323,7 +368,7 @@ impl FileListWidget {
                 // Use modifiers from the pointer event directly
                 self.ctrl_held = modifiers.ctrl;
                 self.shift_held = modifiers.shift;
-                match self.y_to_hit(*y) {
+                match self.y_x_to_hit(*y, *x) {
                     Some(YHit::ColumnHeader) => {
                         let col = self.x_to_sort_column(*x);
                         self.state.borrow_mut().set_sort(col);
@@ -377,4 +422,18 @@ impl FileListWidget {
     fn clear_dirty(&mut self) {
         self.is_dirty = false;
     }
+}
+
+fn resolve_vis_idx(state: &FileViewState, vis_idx: usize) -> Option<usize> {
+    match &state.filtered_indices {
+        Some(fi) => fi.get(vis_idx).copied(),
+        None if vis_idx < state.entries.len() => Some(vis_idx),
+        _ => None,
+    }
+}
+
+fn entry_color(selected: bool, is_dir: bool) -> Color {
+    if selected { color_rgb(80, 200, 255) }
+    else if is_dir { color_rgb(220, 180, 80) }
+    else { color_rgb(190, 190, 190) }
 }

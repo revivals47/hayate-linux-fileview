@@ -1,3 +1,4 @@
+mod breadcrumb;
 mod entry;
 mod file_list;
 mod file_ops;

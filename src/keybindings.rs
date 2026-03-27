@@ -92,6 +92,12 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         w.state.borrow_mut().select_all();
         return EventResponse::Handled;
     }
+    // Tab → cycle view mode (Detail → List → Compact)
+    if ke.keysym == Keysym::Tab {
+        w.state.borrow_mut().cycle_view_mode();
+        w.refresh_viewport();
+        return EventResponse::Handled;
+    }
     if ke.keysym == Keysym::Return {
         let mut state = w.state.borrow_mut();
         if let Some(idx) = state.cursor {
@@ -178,6 +184,49 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
             w.state.borrow_mut().refresh();
             w.refresh_viewport();
         }
+        return EventResponse::Handled;
+    }
+    // F2 → rename selected file/directory
+    if ke.keysym == Keysym::F2 && debounce_ok {
+        w.last_file_op = Some(now);
+        let state = w.state.borrow();
+        if let Some(idx) = state.cursor {
+            if idx < state.entries.len() {
+                let entry = &state.entries[idx];
+                let old_path = state.current_path.join(&entry.name);
+                let stem = std::path::Path::new(&entry.name)
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy();
+                let ext = std::path::Path::new(&entry.name)
+                    .extension()
+                    .map(|e| format!(".{}", e.to_string_lossy()))
+                    .unwrap_or_default();
+                let new_name = format!("{}_renamed{}", stem, ext);
+                drop(state);
+                match crate::file_ops::rename_file(&old_path, &new_name) {
+                    Ok(p) => eprintln!("[file_ops] Renamed to: {}", p.display()),
+                    Err(e) => eprintln!("[file_ops] Rename failed: {}", e),
+                }
+                w.state.borrow_mut().refresh();
+                w.refresh_viewport();
+            }
+        }
+        return EventResponse::Handled;
+    }
+    // Ctrl+Shift+N → create new folder
+    if ke.modifiers.ctrl && ke.modifiers.shift
+        && (ke.keysym == Keysym::n || ke.keysym == Keysym::N)
+        && debounce_ok
+    {
+        w.last_file_op = Some(now);
+        let dir = w.state.borrow().current_path.clone();
+        match crate::file_ops::create_directory(&dir) {
+            Ok(p) => eprintln!("[file_ops] Created: {}", p.display()),
+            Err(e) => eprintln!("[file_ops] Create folder failed: {}", e),
+        }
+        w.state.borrow_mut().refresh();
+        w.refresh_viewport();
         return EventResponse::Handled;
     }
     // Scroll keys

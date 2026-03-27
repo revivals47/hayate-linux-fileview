@@ -183,6 +183,37 @@ fn format_iso8601_now() -> String {
     )
 }
 
+/// Rename a file or directory. Returns the new path on success.
+pub fn rename_file(path: &Path, new_name: &str) -> io::Result<PathBuf> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "No parent directory"))?;
+    let new_path = parent.join(new_name);
+    if new_path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!("'{}' already exists", new_name),
+        ));
+    }
+    fs::rename(path, &new_path)?;
+    Ok(new_path)
+}
+
+/// Create a new directory inside `parent`, using "New Folder" with a numeric
+/// suffix if needed. Returns the path of the created directory.
+pub fn create_directory(parent: &Path) -> io::Result<PathBuf> {
+    let mut name = "New Folder".to_string();
+    let mut path = parent.join(&name);
+    let mut counter = 1u32;
+    while path.exists() {
+        name = format!("New Folder({})", counter);
+        path = parent.join(&name);
+        counter += 1;
+    }
+    fs::create_dir(&path)?;
+    Ok(path)
+}
+
 // ── helpers ──
 
 fn run_batch<F>(sources: &[PathBuf], mut op: F) -> FileOpResult
