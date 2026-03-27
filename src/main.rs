@@ -3,9 +3,10 @@ mod file_list;
 mod file_ops;
 mod preview;
 mod scroll;
+mod sidebar;
 mod state;
 mod status_bar;
-mod two_pane;
+mod three_pane;
 
 use std::cell::RefCell;
 use std::env;
@@ -17,7 +18,7 @@ use hayate_ui::render::TextEngine;
 use hayate_ui::widget::core::Widget;
 
 use state::FileViewState;
-use two_pane::TwoPaneWidget;
+use three_pane::ThreePaneWidget;
 
 fn main() {
     let path = env::args()
@@ -28,7 +29,7 @@ fn main() {
     let engine = Rc::new(RefCell::new(TextEngine::new()));
     let state = Rc::new(RefCell::new(FileViewState::new(path.clone(), engine.clone())));
 
-    let root: Box<dyn Widget> = Box::new(TwoPaneWidget::new(state, engine));
+    let root: Box<dyn Widget> = Box::new(ThreePaneWidget::new(state, engine));
 
     let title = format!("Hayate — {}", path.display());
     if let Err(e) = App::new(title, 1100, 700).run(root) {

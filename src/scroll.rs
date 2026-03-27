@@ -61,6 +61,10 @@ impl Widget for ScrollableWidget {
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
         match event {
+            WidgetEvent::Scroll { dy, .. } => {
+                self.scroll_by(*dy);
+                EventResponse::Handled
+            }
             WidgetEvent::Key(ke) if ke.state == KeyState::Pressed => {
                 let delta = match ke.keysym {
                     Keysym::Up => -self.line_height,

@@ -25,6 +25,8 @@ const PADDING: f32 = 10.0;
 const TITLE_HEIGHT: f32 = 20.0;
 const INFO_HEIGHT: f32 = 16.0;
 
+const SCROLL_STEP: f32 = 16.0;
+
 pub struct PreviewPane {
     state: Rc<RefCell<FileViewState>>,
     title_widget: RichTextWidget,
@@ -32,6 +34,7 @@ pub struct PreviewPane {
     info_widget: RichTextWidget,
     width: f32,
     height: f32,
+    scroll_offset: f32,
 }
 
 impl PreviewPane {
@@ -52,6 +55,7 @@ impl PreviewPane {
             info_widget,
             width: 250.0,
             height: 400.0,
+            scroll_offset: 0.0,
         }
     }
 
@@ -72,6 +76,8 @@ impl PreviewPane {
                 }
             }
         };
+
+        self.scroll_offset = 0.0;
 
         match (selected_info, path) {
             (None, _) => {
@@ -116,8 +122,8 @@ impl PreviewPane {
             | "sh" | "html" | "css" | "c" | "h" | "cpp" | "hpp" | "go" | "java" | "xml"
             | "cfg" | "ini" | "log" | "csv" => match std::fs::read_to_string(path) {
                 Ok(s) => {
-                    let preview: String = s.chars().take(4096).collect();
-                    let lines: Vec<&str> = preview.lines().take(20).collect();
+                    let preview: String = s.chars().take(16384).collect();
+                    let lines: Vec<&str> = preview.lines().take(100).collect();
                     self.content_widget.set_text(&lines.join("\n"));
                 }
                 Err(e) => {
@@ -189,9 +195,10 @@ impl Widget for PreviewPane {
         );
         self.info_widget.paint(canvas, info_rect, stride);
 
-        // Content
-        let content_y = rect.y + PADDING + TITLE_HEIGHT + INFO_HEIGHT + 4.0;
-        let content_height = (rect.height - (content_y - rect.y)).max(0.0);
+        // Content (shifted by scroll_offset)
+        let content_y = rect.y + PADDING + TITLE_HEIGHT + INFO_HEIGHT + 4.0 - self.scroll_offset;
+        let content_height = (rect.height - (PADDING + TITLE_HEIGHT + INFO_HEIGHT + 4.0)).max(0.0)
+            + self.scroll_offset;
         let content_rect = ItemRect::new(
             rect.x + PADDING,
             content_y,
@@ -201,7 +208,11 @@ impl Widget for PreviewPane {
         self.content_widget.paint(canvas, content_rect, stride);
     }
 
-    fn event(&mut self, _event: &WidgetEvent) -> EventResponse {
+    fn event(&mut self, event: &WidgetEvent) -> EventResponse {
+        if let WidgetEvent::Scroll { dy, .. } = event {
+            self.scroll_offset = (self.scroll_offset + *dy * SCROLL_STEP).max(0.0);
+            return EventResponse::Handled;
+        }
         EventResponse::Ignored
     }
 

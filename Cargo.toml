@@ -9,3 +9,4 @@ license = "MIT OR Apache-2.0"
 hayate-ui = { path = "../GUI_kit" }
 xkbcommon = { version = "0.8", features = ["wayland"] }
 libc = "0.2"
+tiny-skia = "0.11"
