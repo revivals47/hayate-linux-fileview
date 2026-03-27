@@ -35,6 +35,7 @@ pub struct PreviewPane {
     width: f32,
     height: f32,
     scroll_offset: f32,
+    pub(crate) is_dirty: bool,
 }
 
 impl PreviewPane {
@@ -56,10 +57,12 @@ impl PreviewPane {
             width: 250.0,
             height: 400.0,
             scroll_offset: 0.0,
+            is_dirty: true,
         }
     }
 
     pub fn update_preview(&mut self) {
+        self.is_dirty = true;
         // Extract needed data from state, then drop the borrow before
         // calling &mut self methods (load_file_preview).
         let (selected_info, path) = {
@@ -217,6 +220,10 @@ impl Widget for PreviewPane {
     }
 
     fn dirty(&self) -> bool {
-        true
+        self.is_dirty
+    }
+
+    fn clear_dirty(&mut self) {
+        self.is_dirty = false;
     }
 }

@@ -244,6 +244,6 @@ impl Widget for SidebarWidget {
     }
 
     fn dirty(&self) -> bool {
-        true
+        false // Sidebar content is static; repaint only when parent forces it
     }
 }

@@ -48,6 +48,8 @@ pub(crate) struct FileListWidget {
     pub(crate) jump_buffer: String,
     pub(crate) jump_last_input: Option<Instant>,
     pub(crate) search_mode: bool,
+    pub(crate) last_file_op: Option<Instant>,
+    is_dirty: bool,
 }
 
 impl FileListWidget {
@@ -69,6 +71,8 @@ impl FileListWidget {
             jump_buffer: String::new(),
             jump_last_input: None,
             search_mode: false,
+            last_file_op: None,
+            is_dirty: true,
         }
     }
 
@@ -283,6 +287,17 @@ impl Widget for FileListWidget {
     }
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
+        let result = self.handle_event_inner(event);
+        if result == EventResponse::Handled {
+            self.is_dirty = true;
+        }
+        result
+    }
+}
+
+// Event handling split out so dirty flag is set automatically.
+impl FileListWidget {
+    fn handle_event_inner(&mut self, event: &WidgetEvent) -> EventResponse {
         // Track modifier keys for pointer events
         if let WidgetEvent::Key(ke) = event {
             self.ctrl_held = ke.modifiers.ctrl;
@@ -343,6 +358,10 @@ impl Widget for FileListWidget {
     }
 
     fn dirty(&self) -> bool {
-        true
+        self.is_dirty
+    }
+
+    fn clear_dirty(&mut self) {
+        self.is_dirty = false;
     }
 }

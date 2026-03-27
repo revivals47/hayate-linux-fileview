@@ -118,7 +118,14 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
             return EventResponse::Handled;
         }
     }
-    if ke.modifiers.ctrl && ke.keysym == Keysym::c {
+    // Debounce file operations (prevent key-repeat double execution)
+    let now = Instant::now();
+    let debounce_ok = w.last_file_op
+        .map(|t| now.duration_since(t).as_millis() > 300)
+        .unwrap_or(true);
+
+    if ke.modifiers.ctrl && ke.keysym == Keysym::c && debounce_ok {
+        w.last_file_op = Some(now);
         let state = w.state.borrow();
         let paths: Vec<PathBuf> = state.selected_indices().iter()
             .filter(|&&i| i < state.entries.len())
@@ -130,7 +137,8 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         eprintln!("[file_ops] Copied {} file(s) to clipboard", count);
         return EventResponse::Handled;
     }
-    if ke.modifiers.ctrl && ke.keysym == Keysym::v {
+    if ke.modifiers.ctrl && ke.keysym == Keysym::v && debounce_ok {
+        w.last_file_op = Some(now);
         if w.clipboard.is_empty() {
             eprintln!("[file_ops] Ctrl+V: clipboard is empty");
         } else {
@@ -148,7 +156,8 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         }
         return EventResponse::Handled;
     }
-    if ke.keysym == Keysym::Delete {
+    if ke.keysym == Keysym::Delete && debounce_ok {
+        w.last_file_op = Some(now);
         let state = w.state.borrow();
         let paths: Vec<PathBuf> = state.selected_indices().iter()
             .filter(|&&i| i < state.entries.len())

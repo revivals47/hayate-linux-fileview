@@ -224,6 +224,12 @@ impl Widget for ThreePaneWidget {
     }
 
     fn dirty(&self) -> bool {
-        true
+        self.file_list.dirty() || self.sidebar.dirty() || self.preview.dirty()
+    }
+
+    fn clear_dirty(&mut self) {
+        self.file_list.clear_dirty();
+        self.sidebar.clear_dirty();
+        self.preview.clear_dirty();
     }
 }
