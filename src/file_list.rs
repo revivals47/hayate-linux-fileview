@@ -298,7 +298,7 @@ impl Widget for FileListWidget {
 // Event handling split out so dirty flag is set automatically.
 impl FileListWidget {
     fn handle_event_inner(&mut self, event: &WidgetEvent) -> EventResponse {
-        // Track modifier keys for pointer events
+        // Track modifier keys from key events (for non-pointer use)
         if let WidgetEvent::Key(ke) = event {
             self.ctrl_held = ke.modifiers.ctrl;
             self.shift_held = ke.modifiers.shift;
@@ -309,7 +309,10 @@ impl FileListWidget {
                 EventResponse::Handled
             }
 
-            WidgetEvent::PointerPress { x, y, button: 0x110 } => {
+            WidgetEvent::PointerPress { x, y, button: 0x110, modifiers } => {
+                // Use modifiers from the pointer event directly
+                self.ctrl_held = modifiers.ctrl;
+                self.shift_held = modifiers.shift;
                 match self.y_to_hit(*y) {
                     Some(YHit::ColumnHeader) => {
                         let col = self.x_to_sort_column(*x);

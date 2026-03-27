@@ -79,11 +79,12 @@ impl Widget for ScrollableWidget {
                 EventResponse::Handled
             }
             // Adjust pointer Y for scroll offset before passing to inner
-            WidgetEvent::PointerPress { x, y, button } => {
+            WidgetEvent::PointerPress { x, y, button, modifiers, .. } => {
                 let adjusted = WidgetEvent::PointerPress {
                     x: *x,
                     y: *y + self.scroll_offset,
                     button: *button,
+                    modifiers: *modifiers,
                 };
                 self.inner.event(&adjusted)
             }

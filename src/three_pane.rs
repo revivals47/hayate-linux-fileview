@@ -168,7 +168,7 @@ impl Widget for ThreePaneWidget {
         }
 
         // Route pointer press by x coordinate
-        if let WidgetEvent::PointerPress { x, y, button } = event {
+        if let WidgetEvent::PointerPress { x, y, button, modifiers, .. } = event {
             if *x < self.sidebar_width {
                 let result = self.sidebar.event(event);
                 if matches!(result, EventResponse::Handled) {
@@ -184,6 +184,7 @@ impl Widget for ThreePaneWidget {
                     x: *x - self.sidebar_width,
                     y: *y,
                     button: *button,
+                    modifiers: *modifiers,
                 };
                 let result = self.file_list.event(&adjusted);
                 if matches!(result, EventResponse::Handled) {
