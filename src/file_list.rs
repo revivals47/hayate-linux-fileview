@@ -80,7 +80,7 @@ impl FileListWidget {
 
     /// Map viewport-space Y to a hit target.
     fn y_to_hit(&self, y: f32) -> Option<YHit> {
-        let content_y = y + self.viewport.scroll_offset() - PADDING;
+        let content_y = y + self.viewport.scroll_offset();
         if content_y < 0.0 {
             return None;
         }
@@ -193,18 +193,18 @@ impl Widget for FileListWidget {
                     let si = if state.sort_column == SortColumn::Size { ind } else { " " };
                     let mi = if state.sort_column == SortColumn::Modified { ind } else { " " };
                     let text = format!(
-                        "    Perm      Name {}{:<27} {:>10}{}  {}{}",
+                        "    Name {}{:<12} {:>8}{}  {}{}",
                         ni, "", "Size", si, "Modified", mi
                     );
                     Self::draw_text_row(
                         &mut engine, canvas, stride, &rect, PADDING, y,
-                        &text, 13.0, color_rgb(120, 120, 120), max_w, self.height,
+                        &text, 11.0, color_rgb(120, 120, 120), max_w, self.height,
                     );
                 }
                 PARENT_ROW => {
                     Self::draw_text_row(
                         &mut engine, canvas, stride, &rect, PADDING, y,
-                        "📁  ../", 13.0, color_rgb(150, 150, 220), max_w, self.height,
+                        "📁  ../", 11.0, color_rgb(150, 150, 220), max_w, self.height,
                     );
                 }
                 _ => {
@@ -228,7 +228,7 @@ impl Widget for FileListWidget {
                     };
                     Self::draw_text_row(
                         &mut engine, canvas, stride, &rect, PADDING, y,
-                        &line, 13.0, color, max_w, self.height,
+                        &line, 11.0, color, max_w, self.height,
                     );
                 }
             }

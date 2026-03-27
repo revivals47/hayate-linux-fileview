@@ -83,15 +83,15 @@ impl DirEntry {
         } else {
             self.name.clone()
         };
-        let truncated: String = name.chars().take(36).collect();
+        let truncated: String = name.chars().take(20).collect();
         let size_str = if self.is_dir {
             String::new()
         } else {
             self.format_size()
         };
         format!(
-            "{}{} {:<36} {:>10}  {}",
-            icon, self.format_mode(), truncated, size_str, self.format_modified()
+            "{}{:<20} {:>8} {}",
+            icon, truncated, size_str, self.format_modified()
         )
     }
 }

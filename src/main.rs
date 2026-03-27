@@ -32,7 +32,7 @@ fn main() {
     let root: Box<dyn Widget> = Box::new(ThreePaneWidget::new(state, engine));
 
     let title = format!("Hayate — {}", path.display());
-    if let Err(e) = App::new(title, 1100, 700).run(root) {
+    if let Err(e) = App::new(title, 750, 450).run(root) {
         eprintln!("Error: {e}");
     }
 }
