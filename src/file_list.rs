@@ -8,6 +8,7 @@ use std::time::Instant;
 use tiny_skia::Color;
 
 use hayate_ui::platform::keyboard::KeyState;
+use std::collections::HashMap;
 use hayate_ui::render::{FontFamily, TextEngine, TextParams};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::scroll::physics::PixelScrollPhysics;
@@ -50,6 +51,8 @@ pub(crate) struct FileListWidget {
     pub(crate) search_mode: bool,
     pub(crate) last_file_op: Option<Instant>,
     is_dirty: bool,
+    /// Cached cosmic_text Buffers keyed by (row_text, font_size_bits).
+    text_cache: RefCell<HashMap<(String, u32), cosmic_text::Buffer>>,
 }
 
 impl FileListWidget {
@@ -73,6 +76,7 @@ impl FileListWidget {
             search_mode: false,
             last_file_op: None,
             is_dirty: true,
+            text_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -93,6 +97,7 @@ impl FileListWidget {
         };
         drop(state);
         self.viewport.on_total_changed(FIXED_ROWS + count);
+        self.text_cache.borrow_mut().clear();
     }
 
     pub(crate) fn ensure_cursor_visible(&mut self) {
@@ -152,6 +157,7 @@ impl FileListWidget {
     }
 
     fn draw_text_row(
+        cache: &RefCell<HashMap<(String, u32), cosmic_text::Buffer>>,
         engine: &mut TextEngine,
         canvas: &mut [u8],
         stride: u32,
@@ -164,16 +170,20 @@ impl FileListWidget {
         max_w: f32,
         clip_h: f32,
     ) {
-        let params = TextParams {
-            text,
-            font_size,
-            line_height: ROW_HEIGHT,
-            color,
-            family: FontFamily::Monospace,
-        };
-        let buffer = engine.layout(&params, max_w);
+        let key = (text.to_string(), font_size.to_bits());
+        let mut text_cache = cache.borrow_mut();
+        let buffer = text_cache.entry(key).or_insert_with(|| {
+            let params = TextParams {
+                text,
+                font_size,
+                line_height: ROW_HEIGHT,
+                color,
+                family: FontFamily::Monospace,
+            };
+            engine.layout(&params, max_w)
+        });
         engine.draw_buffer(
-            &buffer,
+            buffer,
             canvas,
             stride,
             (rect.x + x) as i32,
@@ -219,14 +229,14 @@ impl Widget for FileListWidget {
                         None => String::new(),
                     };
                     let text = format!("  {}{}{}", state.current_path.display(), hidden, search_indicator);
-                    Self::draw_text_row(
+                    Self::draw_text_row(&self.text_cache, 
                         &mut engine, canvas, stride, &rect, PADDING, y,
                         &text, 16.0, color_rgb(100, 180, 255), max_w, self.height,
                     );
                 }
                 SEP_ROW | COL_SEP_ROW => {
                     let text = "─".repeat(60);
-                    Self::draw_text_row(
+                    Self::draw_text_row(&self.text_cache, 
                         &mut engine, canvas, stride, &rect, PADDING, y,
                         &text, 8.0, color_rgb(60, 60, 60), max_w, self.height,
                     );
@@ -240,13 +250,13 @@ impl Widget for FileListWidget {
                         "    Name {}{:<12} {:>8}{}  {}{}",
                         ni, "", "Size", si, "Modified", mi
                     );
-                    Self::draw_text_row(
+                    Self::draw_text_row(&self.text_cache, 
                         &mut engine, canvas, stride, &rect, PADDING, y,
                         &text, 11.0, color_rgb(120, 120, 120), max_w, self.height,
                     );
                 }
                 PARENT_ROW => {
-                    Self::draw_text_row(
+                    Self::draw_text_row(&self.text_cache, 
                         &mut engine, canvas, stride, &rect, PADDING, y,
                         "📁  ../", 11.0, color_rgb(150, 150, 220), max_w, self.height,
                     );
@@ -277,7 +287,7 @@ impl Widget for FileListWidget {
                     } else {
                         entry.display_line()
                     };
-                    Self::draw_text_row(
+                    Self::draw_text_row(&self.text_cache, 
                         &mut engine, canvas, stride, &rect, PADDING, y,
                         &line, 11.0, color, max_w, self.height,
                     );
