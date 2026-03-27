@@ -250,6 +250,7 @@ name = "hayate-linux-fileview"
 version = "0.1.0"
 dependencies = [
  "hayate-ui",
+ "libc",
  "xkbcommon",
 ]
 
