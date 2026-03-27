@@ -361,7 +361,7 @@ impl FileListWidget {
     }
 
     fn dirty(&self) -> bool {
-        self.is_dirty
+        self.is_dirty || self.viewport.is_animating()
     }
 
     fn clear_dirty(&mut self) {
