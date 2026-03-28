@@ -19,6 +19,8 @@ const PAD_Y: f32 = 4.0;
 const BG: (u8, u8, u8) = (35, 35, 40);
 const CHAR_W: f32 = 7.5;
 
+const NAV_BTN_W: f32 = CHAR_W * 2.0; // width of ◀ or ▶ button
+
 struct Seg { label: String, path: PathBuf, x0: f32, x1: f32 }
 
 pub(crate) struct BreadcrumbWidget {
@@ -26,6 +28,8 @@ pub(crate) struct BreadcrumbWidget {
     engine: Rc<RefCell<TextEngine>>,
     segs: Vec<Seg>,
     width: f32,
+    back_x0: f32, back_x1: f32,
+    fwd_x0: f32,  fwd_x1: f32,
 }
 
 fn col(r: u8, g: u8, b: u8) -> Color { Color::from_rgba8(r, g, b, 255) }
@@ -44,7 +48,10 @@ fn fill_bg(canvas: &mut [u8], rect: &ItemRect, stride: u32, r: u8, g: u8, b: u8)
 
 impl BreadcrumbWidget {
     pub(crate) fn new(state: Rc<RefCell<FileViewState>>, engine: Rc<RefCell<TextEngine>>) -> Self {
-        let mut w = Self { state, engine, segs: Vec::new(), width: 0.0 };
+        let mut w = Self {
+            state, engine, segs: Vec::new(), width: 0.0,
+            back_x0: 0.0, back_x1: 0.0, fwd_x0: 0.0, fwd_x1: 0.0,
+        };
         w.update_segments();
         w
     }
@@ -52,9 +59,14 @@ impl BreadcrumbWidget {
     pub(crate) fn update_segments(&mut self) {
         let cur = self.state.borrow().current_path.clone();
         self.segs.clear();
-        let mut acc = PathBuf::new();
         let mut x = PAD_X;
+        // Back/forward buttons: "◀ ▶ "
+        self.back_x0 = x; self.back_x1 = x + NAV_BTN_W;
+        x += NAV_BTN_W + CHAR_W; // gap
+        self.fwd_x0 = x; self.fwd_x1 = x + NAV_BTN_W;
+        x += NAV_BTN_W + CHAR_W; // gap
         // Root "/"
+        let mut acc = PathBuf::new();
         acc.push("/");
         let lw = CHAR_W;
         self.segs.push(Seg { label: "/".into(), path: acc.clone(), x0: x, x1: x + lw });
@@ -93,6 +105,14 @@ impl Widget for BreadcrumbWidget {
 
         let mut engine = self.engine.borrow_mut();
         let mw = (self.width - PAD_X).max(0.0);
+        let st = self.state.borrow();
+        // Back/forward buttons
+        let back_c = if st.can_go_back() { col(180,180,190) } else { col(60,60,60) };
+        let fwd_c = if st.can_go_forward() { col(180,180,190) } else { col(60,60,60) };
+        drop(st);
+        Self::draw(&mut engine, canvas, stride, &rect, self.back_x0, "◀", back_c, mw);
+        Self::draw(&mut engine, canvas, stride, &rect, self.fwd_x0, "▶", fwd_c, mw);
+        // Path segments
         let last = self.segs.len().saturating_sub(1);
         for (i, s) in self.segs.iter().enumerate() {
             if i > 0 {
@@ -106,6 +126,19 @@ impl Widget for BreadcrumbWidget {
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
         match event {
             WidgetEvent::PointerPress { x, button: 0x110, .. } => {
+                // Back button
+                if *x >= self.back_x0 && *x < self.back_x1 {
+                    self.state.borrow_mut().go_back();
+                    self.update_segments();
+                    return EventResponse::Handled;
+                }
+                // Forward button
+                if *x >= self.fwd_x0 && *x < self.fwd_x1 {
+                    self.state.borrow_mut().go_forward();
+                    self.update_segments();
+                    return EventResponse::Handled;
+                }
+                // Path segment
                 if let Some(s) = self.seg_at(*x) {
                     let p = s.path.clone();
                     if p.is_dir() {

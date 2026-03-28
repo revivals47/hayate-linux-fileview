@@ -12,9 +12,11 @@ use crate::entry::SortColumn;
 use crate::file_list::{FileListWidget, JUMP_TIMEOUT_MS};
 
 pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventResponse {
-    // Ctrl+Q → quit
+    // Ctrl+Q → save config and quit
     // SAFETY: No in-flight async I/O. Wayland cleanup is handled by drop.
     if ke.modifiers.ctrl && ke.keysym == Keysym::q {
+        let cfg = crate::config::Config::from_state(&w.state.borrow());
+        cfg.save();
         std::process::exit(0);
     }
 
@@ -70,6 +72,18 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
     }
     if ke.keysym == Keysym::BackSpace {
         w.state.borrow_mut().go_parent();
+        w.refresh_viewport();
+        return EventResponse::Handled;
+    }
+    // Alt+Left → navigate back
+    if ke.modifiers.alt && ke.keysym == Keysym::Left {
+        w.state.borrow_mut().go_back();
+        w.refresh_viewport();
+        return EventResponse::Handled;
+    }
+    // Alt+Right → navigate forward
+    if ke.modifiers.alt && ke.keysym == Keysym::Right {
+        w.state.borrow_mut().go_forward();
         w.refresh_viewport();
         return EventResponse::Handled;
     }

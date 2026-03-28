@@ -26,13 +26,20 @@ pub(crate) struct FileViewState {
     pub(crate) search_query: Option<String>,
     pub(crate) filtered_indices: Option<Vec<usize>>,
     pub(crate) last_error: Option<String>,
+    pub(crate) back_stack: Vec<PathBuf>,
+    pub(crate) forward_stack: Vec<PathBuf>,
 }
 
 impl FileViewState {
     pub(crate) fn new(path: PathBuf, engine: Rc<RefCell<TextEngine>>) -> Self {
-        let show_hidden = false;
-        let sort_column = SortColumn::Name;
-        let sort_order = SortOrder::Asc;
+        Self::new_with_config(path, engine, SortColumn::Name, SortOrder::Asc, false, ViewMode::Detail)
+    }
+
+    pub(crate) fn new_with_config(
+        path: PathBuf, engine: Rc<RefCell<TextEngine>>,
+        sort_column: SortColumn, sort_order: SortOrder,
+        show_hidden: bool, view_mode: ViewMode,
+    ) -> Self {
         let (entries, last_error) = match read_dir_sorted(&path, show_hidden, sort_column, sort_order) {
             Ok(e) => (e, None),
             Err(e) => (Vec::new(), Some(e)),
@@ -47,10 +54,12 @@ impl FileViewState {
             sort_column,
             sort_order,
             engine,
-            view_mode: ViewMode::Detail,
+            view_mode,
             search_query: None,
             filtered_indices: None,
             last_error,
+            back_stack: Vec::new(),
+            forward_stack: Vec::new(),
         }
     }
 
@@ -132,11 +141,32 @@ impl FileViewState {
             self.last_error = Some(format!("Cannot open: {}", path.display()));
             return;
         }
+        self.back_stack.push(self.current_path.clone());
+        self.forward_stack.clear();
         self.current_path = path;
         self.refresh();
     }
 
     pub(crate) fn clear_error(&mut self) { self.last_error = None; }
+
+    pub(crate) fn go_back(&mut self) {
+        if let Some(prev) = self.back_stack.pop() {
+            self.forward_stack.push(self.current_path.clone());
+            self.current_path = prev;
+            self.refresh();
+        }
+    }
+
+    pub(crate) fn go_forward(&mut self) {
+        if let Some(next) = self.forward_stack.pop() {
+            self.back_stack.push(self.current_path.clone());
+            self.current_path = next;
+            self.refresh();
+        }
+    }
+
+    pub(crate) fn can_go_back(&self) -> bool { !self.back_stack.is_empty() }
+    pub(crate) fn can_go_forward(&self) -> bool { !self.forward_stack.is_empty() }
 
     pub(crate) fn go_parent(&mut self) {
         if let Some(parent) = self.current_path.parent() {

@@ -1,6 +1,7 @@
 //! Directory entry types, sorting, and filesystem reading.
 
 use std::path::Path;
+use unicode_width::UnicodeWidthChar;
 
 // ── Sort types ──
 
@@ -39,6 +40,25 @@ pub(crate) fn format_size(bytes: u64) -> String {
     } else {
         format!("{:.1} TB", bytes as f64 / (1024.0 * 1024.0 * 1024.0 * 1024.0))
     }
+}
+
+/// Truncate a string to fit within `max_width` display columns (CJK-aware).
+pub(crate) fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let mut width = 0;
+    let mut result = String::new();
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + cw > max_width { break; }
+        width += cw;
+        result.push(ch);
+    }
+    result
+}
+
+/// Pad a string with spaces to reach `target` display columns (CJK-aware).
+fn pad_to_width(s: &str, target: usize) -> String {
+    let w: usize = s.chars().map(|c| UnicodeWidthChar::width(c).unwrap_or(0)).sum();
+    if w >= target { s.to_string() } else { format!("{}{}", s, " ".repeat(target - w)) }
 }
 
 impl DirEntry {
@@ -88,21 +108,11 @@ impl DirEntry {
 
     pub(crate) fn display_line(&self) -> String {
         let icon = if self.is_symlink { "🔗  " } else if self.is_dir { "📁  " } else { "    " };
-        let name = if self.is_dir {
-            format!("{}/", self.name)
-        } else {
-            self.name.clone()
-        };
-        let truncated: String = name.chars().take(20).collect();
-        let size_str = if self.is_dir {
-            String::new()
-        } else {
-            self.format_size()
-        };
-        format!(
-            "{}{:<20} {:>8} {}",
-            icon, truncated, size_str, self.format_modified()
-        )
+        let name = if self.is_dir { format!("{}/", self.name) } else { self.name.clone() };
+        let truncated = truncate_to_width(&name, 20);
+        let padded = pad_to_width(&truncated, 20);
+        let size_str = if self.is_dir { String::new() } else { self.format_size() };
+        format!("{}{} {:>8} {}", icon, padded, size_str, self.format_modified())
     }
 }
 

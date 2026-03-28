@@ -32,6 +32,7 @@ const COL_SEP_ROW: usize = 3;
 const PARENT_ROW: usize = 4;
 const PADDING: f32 = 12.0;
 pub(crate) const JUMP_TIMEOUT_MS: u128 = 300;
+const TEXT_CACHE_MAX: usize = 200;
 
 fn color_rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba8(r, g, b, 255)
@@ -190,6 +191,9 @@ impl FileListWidget {
     ) {
         let key = (text.to_string(), font_size.to_bits());
         let mut text_cache = cache.borrow_mut();
+        if text_cache.len() > TEXT_CACHE_MAX {
+            text_cache.clear();
+        }
         let buffer = text_cache.entry(key).or_insert_with(|| {
             let params = TextParams {
                 text,
