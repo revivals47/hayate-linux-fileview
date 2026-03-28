@@ -12,6 +12,11 @@ use crate::entry::SortColumn;
 use crate::file_list::{FileListWidget, JUMP_TIMEOUT_MS};
 
 pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventResponse {
+    // Ctrl+Q → quit
+    if ke.modifiers.ctrl && ke.keysym == Keysym::q {
+        std::process::exit(0);
+    }
+
     // ── Search mode ──
     if w.search_mode {
         match ke.keysym {
