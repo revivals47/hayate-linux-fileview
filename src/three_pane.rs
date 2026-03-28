@@ -50,6 +50,7 @@ impl ThreePaneWidget {
                 selected_count: 0,
                 selected_total_size: 0,
                 current_path: &st.current_path,
+                error: None,
             });
         }
         Self {
@@ -88,6 +89,7 @@ impl ThreePaneWidget {
             selected_count,
             selected_total_size,
             current_path: &state.current_path,
+            error: state.last_error.as_deref(),
         });
     }
 }
@@ -106,18 +108,34 @@ impl Widget for ThreePaneWidget {
         };
         self.breadcrumb.layout(&bc_c);
 
-        self.sidebar_width = 150.0_f32.min(total_width * 0.2);
-        let remaining = total_width - self.sidebar_width;
-        self.preview_width = 250.0_f32.min(remaining * 0.35);
-        self.list_width = remaining - self.preview_width;
+        // Responsive pane sizing
+        if total_width < 350.0 {
+            // Narrow: file list only
+            self.sidebar_width = 0.0;
+            self.preview_width = 0.0;
+            self.list_width = total_width;
+        } else if total_width < 550.0 {
+            // Medium: sidebar + file list
+            self.sidebar_width = 120.0_f32.min(total_width * 0.25);
+            self.preview_width = 0.0;
+            self.list_width = total_width - self.sidebar_width;
+        } else {
+            // Full: 3 panes
+            self.sidebar_width = 150.0_f32.min(total_width * 0.18);
+            let remaining = total_width - self.sidebar_width;
+            self.preview_width = 250.0_f32.min(remaining * 0.35);
+            self.list_width = remaining - self.preview_width;
+        }
 
-        let sidebar_c = Constraints {
-            min_width: self.sidebar_width,
-            max_width: self.sidebar_width,
-            min_height: content_height,
-            max_height: content_height,
-        };
-        self.sidebar.layout(&sidebar_c);
+        if self.sidebar_width > 0.0 {
+            let sidebar_c = Constraints {
+                min_width: self.sidebar_width,
+                max_width: self.sidebar_width,
+                min_height: content_height,
+                max_height: content_height,
+            };
+            self.sidebar.layout(&sidebar_c);
+        }
 
         let list_c = Constraints {
             min_width: self.list_width,
@@ -127,13 +145,15 @@ impl Widget for ThreePaneWidget {
         };
         self.file_list.layout(&list_c);
 
-        let preview_c = Constraints {
-            min_width: self.preview_width,
-            max_width: self.preview_width,
-            min_height: content_height,
-            max_height: content_height,
-        };
-        self.preview.layout(&preview_c);
+        if self.preview_width > 0.0 {
+            let preview_c = Constraints {
+                min_width: self.preview_width,
+                max_width: self.preview_width,
+                min_height: content_height,
+                max_height: content_height,
+            };
+            self.preview.layout(&preview_c);
+        }
 
         let status_c = Constraints {
             min_width: total_width,
@@ -154,21 +174,25 @@ impl Widget for ThreePaneWidget {
         let bc_rect = ItemRect::new(rect.x, rect.y, rect.width, BREADCRUMB_HEIGHT);
         self.breadcrumb.paint(canvas, bc_rect, stride);
 
-        // Sidebar
-        let sidebar_rect =
-            ItemRect::new(rect.x, pane_y, self.sidebar_width, content_height);
-        self.sidebar.paint(canvas, sidebar_rect, stride);
+        // Sidebar (skip if collapsed)
+        if self.sidebar_width > 0.0 {
+            let sidebar_rect =
+                ItemRect::new(rect.x, pane_y, self.sidebar_width, content_height);
+            self.sidebar.paint(canvas, sidebar_rect, stride);
+        }
 
-        // File list
+        // File list (always visible)
         let list_x = rect.x + self.sidebar_width;
         let list_rect = ItemRect::new(list_x, pane_y, self.list_width, content_height);
         self.file_list.paint(canvas, list_rect, stride);
 
-        // Preview
-        let preview_x = list_x + self.list_width;
-        let preview_rect =
-            ItemRect::new(preview_x, pane_y, self.preview_width, content_height);
-        self.preview.paint(canvas, preview_rect, stride);
+        // Preview (skip if collapsed)
+        if self.preview_width > 0.0 {
+            let preview_x = list_x + self.list_width;
+            let preview_rect =
+                ItemRect::new(preview_x, pane_y, self.preview_width, content_height);
+            self.preview.paint(canvas, preview_rect, stride);
+        }
 
         // Status bar (full width, bottom)
         let status_y = pane_y + content_height;
@@ -201,7 +225,7 @@ impl Widget for ThreePaneWidget {
             }
             // Adjust y for pane area (below breadcrumb)
             let pane_y = *y - BREADCRUMB_HEIGHT;
-            if *x < self.sidebar_width {
+            if self.sidebar_width > 0.0 && *x < self.sidebar_width {
                 let adjusted = WidgetEvent::PointerPress {
                     x: *x,
                     y: pane_y,

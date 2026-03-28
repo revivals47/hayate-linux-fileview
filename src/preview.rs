@@ -6,17 +6,8 @@ use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 use hayate_ui::widget::text_widget::RichTextWidget;
 
+use crate::entry::format_size;
 use crate::state::FileViewState;
-
-fn format_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
-        format!("{} B", bytes)
-    } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    }
-}
 
 const TITLE_FONT: f32 = 14.0;
 const CONTENT_FONT: f32 = 12.0;
@@ -104,7 +95,7 @@ impl PreviewPane {
                 if let Ok(meta) = std::fs::metadata(&path) {
                     self.info_widget.set_text(&format!(
                         "Size: {}  Type: {}  Readonly: {}",
-                        format_bytes(meta.len()),
+                        format_size(meta.len()),
                         if meta.is_dir() { "Directory" } else { "File" },
                         meta.permissions().readonly()
                     ));

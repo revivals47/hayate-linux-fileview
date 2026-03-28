@@ -7,13 +7,9 @@ use hayate_ui::render::TextEngine;
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
-const BAR_HEIGHT: f32 = 20.0;
+use crate::entry::format_size;
 
-fn format_size(bytes: u64) -> String {
-    if bytes < 1024 { format!("{} B", bytes) }
-    else if bytes < 1024 * 1024 { format!("{:.1} KB", bytes as f64 / 1024.0) }
-    else { format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0)) }
-}
+const BAR_HEIGHT: f32 = 20.0;
 const BG_COLOR: (u8, u8, u8) = (40, 40, 45);
 
 /// Information needed to render the status bar.
@@ -25,10 +21,12 @@ pub struct StatusInfo<'a> {
     pub selected_count: usize,
     pub selected_total_size: u64,
     pub current_path: &'a std::path::Path,
+    pub error: Option<&'a str>,
 }
 
 pub struct StatusBar {
     message: String,
+    is_error: bool,
     engine: Rc<RefCell<TextEngine>>,
 }
 
@@ -36,11 +34,18 @@ impl StatusBar {
     pub fn new(engine: Rc<RefCell<TextEngine>>) -> Self {
         Self {
             message: String::new(),
+            is_error: false,
             engine,
         }
     }
 
     pub fn update(&mut self, info: &StatusInfo<'_>) {
+        if let Some(err) = info.error {
+            self.message = format!("  ⚠ Error: {}", err);
+            self.is_error = true;
+            return;
+        }
+        self.is_error = false;
         let hidden = if info.show_hidden { "on" } else { "off" };
         let selected = if info.selected_count > 1 {
             format!(" | {} selected ({})", info.selected_count, format_size(info.selected_total_size))
@@ -87,9 +92,10 @@ impl Widget for StatusBar {
         // Render text on top of background
         if !self.message.is_empty() {
             use hayate_ui::widget::text_widget::RichTextWidget;
+            let (r, g, b) = if self.is_error { (255, 100, 100) } else { (180, 180, 180) };
             let mut text = RichTextWidget::new(self.message.clone(), 11.0)
                 .with_engine(self.engine.clone())
-                .with_color(180, 180, 180);
+                .with_color(r, g, b);
             let text_constraints = Constraints::tight(rect.width, BAR_HEIGHT);
             text.layout(&text_constraints);
             text.paint(canvas, rect, stride);

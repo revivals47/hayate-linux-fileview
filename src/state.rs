@@ -25,6 +25,7 @@ pub(crate) struct FileViewState {
     pub(crate) view_mode: ViewMode,
     pub(crate) search_query: Option<String>,
     pub(crate) filtered_indices: Option<Vec<usize>>,
+    pub(crate) last_error: Option<String>,
 }
 
 impl FileViewState {
@@ -32,7 +33,10 @@ impl FileViewState {
         let show_hidden = false;
         let sort_column = SortColumn::Name;
         let sort_order = SortOrder::Asc;
-        let entries = read_dir_sorted(&path, show_hidden, sort_column, sort_order);
+        let (entries, last_error) = match read_dir_sorted(&path, show_hidden, sort_column, sort_order) {
+            Ok(e) => (e, None),
+            Err(e) => (Vec::new(), Some(e)),
+        };
         Self {
             current_path: path,
             show_hidden,
@@ -46,11 +50,21 @@ impl FileViewState {
             view_mode: ViewMode::Detail,
             search_query: None,
             filtered_indices: None,
+            last_error,
         }
     }
 
     pub(crate) fn refresh(&mut self) {
-        self.entries = read_dir_sorted(&self.current_path, self.show_hidden, self.sort_column, self.sort_order);
+        match read_dir_sorted(&self.current_path, self.show_hidden, self.sort_column, self.sort_order) {
+            Ok(entries) => {
+                self.entries = entries;
+                self.last_error = None;
+            }
+            Err(e) => {
+                self.entries = Vec::new();
+                self.last_error = Some(e);
+            }
+        }
         self.clear_selection();
         self.search_query = None;
         self.filtered_indices = None;
@@ -114,9 +128,15 @@ impl FileViewState {
     }
 
     pub(crate) fn navigate(&mut self, path: PathBuf) {
+        if !path.is_dir() {
+            self.last_error = Some(format!("Cannot open: {}", path.display()));
+            return;
+        }
         self.current_path = path;
         self.refresh();
     }
+
+    pub(crate) fn clear_error(&mut self) { self.last_error = None; }
 
     pub(crate) fn go_parent(&mut self) {
         if let Some(parent) = self.current_path.parent() {

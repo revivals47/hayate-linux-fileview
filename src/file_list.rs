@@ -52,6 +52,8 @@ pub(crate) struct FileListWidget {
     pub(crate) jump_last_input: Option<Instant>,
     pub(crate) search_mode: bool,
     pub(crate) last_file_op: Option<Instant>,
+    pub(crate) last_click_time: Option<Instant>,
+    pub(crate) last_click_idx: Option<usize>,
     is_dirty: bool,
     /// Cached cosmic_text Buffers keyed by (row_text, font_size_bits).
     text_cache: RefCell<HashMap<(String, u32), cosmic_text::Buffer>>,
@@ -77,6 +79,8 @@ impl FileListWidget {
             jump_last_input: None,
             search_mode: false,
             last_file_op: None,
+            last_click_time: None,
+            last_click_idx: None,
             is_dirty: true,
             text_cache: RefCell::new(HashMap::new()),
         }
@@ -381,21 +385,35 @@ impl FileListWidget {
                         EventResponse::Handled
                     }
                     Some(YHit::Entry(idx)) => {
+                        let is_double = match (self.last_click_time, self.last_click_idx) {
+                            (Some(t), Some(prev)) => prev == idx && t.elapsed().as_millis() < 300,
+                            _ => false,
+                        };
+                        self.last_click_time = Some(Instant::now());
+                        self.last_click_idx = Some(idx);
+
                         let mut state = self.state.borrow_mut();
-                        if idx < state.entries.len() && state.entries[idx].is_dir && !self.ctrl_held && !self.shift_held {
-                            let path = state.current_path.join(&state.entries[idx].name);
-                            state.navigate(path);
-                            drop(state);
-                            self.refresh_viewport();
-                        } else if idx < state.entries.len() {
-                            if self.ctrl_held {
-                                state.toggle_select(idx);
-                            } else if self.shift_held {
-                                let anchor = state.anchor.unwrap_or(0);
-                                state.select_range(anchor, idx);
+                        if idx >= state.entries.len() {
+                            return EventResponse::Ignored;
+                        }
+                        if is_double {
+                            if state.entries[idx].is_dir {
+                                let path = state.current_path.join(&state.entries[idx].name);
+                                state.navigate(path);
+                                drop(state);
+                                self.refresh_viewport();
                             } else {
-                                state.select_single(idx);
+                                let path = state.current_path.join(&state.entries[idx].name);
+                                drop(state);
+                                open_with_xdg(&path);
                             }
+                        } else if self.ctrl_held {
+                            state.toggle_select(idx);
+                        } else if self.shift_held {
+                            let anchor = state.anchor.unwrap_or(0);
+                            state.select_range(anchor, idx);
+                        } else {
+                            state.select_single(idx);
                         }
                         EventResponse::Handled
                     }
@@ -436,4 +454,13 @@ fn entry_color(selected: bool, is_dir: bool) -> Color {
     if selected { color_rgb(80, 200, 255) }
     else if is_dir { color_rgb(220, 180, 80) }
     else { color_rgb(190, 190, 190) }
+}
+
+pub(crate) fn open_with_xdg(path: &std::path::Path) {
+    let _ = std::process::Command::new("xdg-open")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }

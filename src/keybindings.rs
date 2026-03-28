@@ -13,6 +13,7 @@ use crate::file_list::{FileListWidget, JUMP_TIMEOUT_MS};
 
 pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventResponse {
     // Ctrl+Q → quit
+    // SAFETY: No in-flight async I/O. Wayland cleanup is handled by drop.
     if ke.modifiers.ctrl && ke.keysym == Keysym::q {
         std::process::exit(0);
     }
@@ -104,13 +105,18 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         return EventResponse::Handled;
     }
     if ke.keysym == Keysym::Return {
-        let mut state = w.state.borrow_mut();
+        let state = w.state.borrow();
         if let Some(idx) = state.cursor {
-            if idx < state.entries.len() && state.entries[idx].is_dir {
+            if idx < state.entries.len() {
                 let path = state.current_path.join(&state.entries[idx].name);
-                state.navigate(path);
-                drop(state);
-                w.refresh_viewport();
+                if state.entries[idx].is_dir {
+                    drop(state);
+                    w.state.borrow_mut().navigate(path);
+                    w.refresh_viewport();
+                } else {
+                    drop(state);
+                    crate::file_list::open_with_xdg(&path);
+                }
                 return EventResponse::Handled;
             }
         }

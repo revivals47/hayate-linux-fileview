@@ -255,13 +255,20 @@ fn unique_path(candidate: &Path) -> PathBuf {
     unreachable!()
 }
 
-/// Recursively copy a directory tree.
+/// Recursively copy a directory tree, preserving symlinks.
 fn copy_dir_recursive(src: &Path, dest: &Path) -> io::Result<()> {
     fs::create_dir_all(dest)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let target = dest.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let ft = fs::symlink_metadata(entry.path())?.file_type();
+        if ft.is_symlink() {
+            let link_target = std::fs::read_link(entry.path())?;
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&link_target, &target)?;
+            #[cfg(not(unix))]
+            { let _ = link_target; fs::copy(entry.path(), &target)?; }
+        } else if ft.is_dir() {
             copy_dir_recursive(&entry.path(), &target)?;
         } else {
             fs::copy(entry.path(), &target)?;
