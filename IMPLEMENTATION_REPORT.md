@@ -1,202 +1,160 @@
-# Hayate Linux File Viewer — 実装報告書
+# Hayate Linux FileView — 実装報告書
 
 **期間:** 2026-03-26 〜 2026-03-28
-**リポジトリ:** https://github.com/revivals47/hayate-linux-fileview
+**最終更新:** 2026-03-28
+**状態:** 機能実装完了、hayate-ui新API統合待ち
 
 ---
 
-## 1. 目的
+## 概要
 
-Hayate UIツールキットのドッグフーディングとして、Windowsから移行してきたLinuxユーザーが戸惑わないファイルビューアを構築する。
-
-### 背景
-- Nautilus（GNOME Files）はWindowsユーザーの期待と乖離がある
-- Mac版Hayateファイルマネージャの知見を活かす
-- GTKのD&D不安定さ・キャンバスクラッシュの代替としてWayland-native実装
+hayate-ui（Wayland-native GUIツールキット）のドッグフーディングとして開発された
+Linuxファイルマネージャ。ゼロから2,774行のファイルマネージャを構築。
 
 ---
 
-## 2. 成果物
+## モジュール構成（14ファイル, 2,774行）
 
-### 数字
+| ファイル | 行数 | 責務 |
+|---------|------|------|
+| main.rs | 47 | エントリポイント、Config読込、App起動 |
+| config.rs | 120 | 設定永続化（手書きtomlパーサー） |
+| state.rs | 225 | アプリ状態、選択、履歴、検索フィルタ |
+| entry.rs | 153 | DirEntry、ソート、format_size、CJK文字幅 |
+| file_list.rs | 470 | VirtualViewport仮想化リスト、直接TextEngine描画 |
+| file_ops.rs | 323 | コピー/移動/ゴミ箱/リネーム/mkdir + symlink |
+| keybindings.rs | 289 | 全キーボードショートカット |
+| scroll.rs | 98 | 汎用ScrollableWidget |
+| sidebar.rs | 249 | ブックマーク + /proc/mountsマウントポイント |
+| breadcrumb.rs | 164 | パンくずナビ + ◀▶ 履歴ボタン |
+| preview.rs | 220 | ファイルプレビュー + スクロール |
+| status_bar.rs | 112 | ステータスバー + エラー表示 |
+| three_pane.rs | 304 | レスポンシブ3ペインレイアウト |
 
-| 指標 | 値 |
+全ファイル500行以内。
+
+---
+
+## キーボードショートカット
+
+| キー | 動作 |
 |------|------|
-| モジュール数 | 14 |
-| 総行数 | 2,774 |
-| テスト | 5 |
-| 最大ファイルサイズ | 500行以内 |
-| コミット | 14 |
+| Up/Down | カーソル移動 + 選択 |
+| Shift+Up/Down | 範囲選択拡張 |
+| Enter | ディレクトリ移動 / ファイルをxdg-openで開く |
+| Backspace | 親ディレクトリ |
+| Alt+Left/Right | 戻る/進む履歴 |
+| Tab | 表示モード切替 (Detail→List→Compact) |
+| Ctrl+H | 隠しファイルトグル |
+| Ctrl+F | 検索モード（インクリメンタルフィルタ） |
+| Ctrl+A | 全選択 |
+| Ctrl+C | 選択ファイルをコピー（内部バッファ） |
+| Ctrl+V | ペースト（コピーしたファイルを現在地にコピー） |
+| Delete | ゴミ箱に移動（XDG Trash仕様） |
+| F2 | リネーム（簡易版: _renamedサフィックス） |
+| Ctrl+Shift+N | 新規フォルダ作成 |
+| Ctrl+1/2/3 | Name/Size/Modifiedでソート |
+| Ctrl+Q | 設定保存して終了 |
+| ? | ショートカットヘルプ（stderr出力） |
+| 英数字 | インクリメンタルジャンプ（300msタイムアウト） |
+| PageUp/Down | ページスクロール |
+| Home/End | 先頭/末尾へ |
+| Esc | 検索モード終了 / フィルタクリア |
 
-### モジュール構成
+---
 
+## 残課題（優先度順）
+
+### P1: hayate-ui新APIの統合（最優先）
+
+hayate-uiに以下のAPIが追加済み。fileview側に統合すれば大幅にUX改善。
+
+| hayate-ui API | fileviewでの用途 | 現状 |
+|---------------|-----------------|------|
+| `WidgetEvent::DoubleClick` | ダブルクリック判定 | 自前タイマー（置換可能） |
+| `WidgetEvent::FileDrop` | 外部からファイルドロップ | 未統合 |
+| `App::quit_flag()` | 安全終了 | exit(0)使用中 |
+| `App::title_buffer()` | 動的タイトル更新 | 起動時固定 |
+| `App::window_size()` | config保存時サイズ取得 | 未統合 |
+| `App::clipboard_copy_buffer()` | システムクリップボード | 内部バッファのみ |
+| `ContextMenu` | 右クリックメニュー | 未実装 |
+| `ToastWidget` | 操作結果通知 | eprintln使用中 |
+| `portal::open_with_default()` | xdg-open統一API | 自前Command::spawn |
+
+**統合作業の見積もり:** 各API 30分程度、全体で半日。
+
+### P2: 機能改善
+
+- [ ] F2インラインリネーム（TextInput統合）
+- [ ] Ctrl+Lアドレスバー直接入力
+- [ ] ペイン間フォーカス移動（F6/Ctrl+Tab）
+- [ ] テスト強化（現在5件→30件目標）
+- [ ] ファイルサイズのディスク使用量表示
+
+### P3: 将来機能
+
+- [ ] タブ対応（複数ディレクトリ同時表示）
+- [ ] inotifyファイル監視（自動リフレッシュ）
+- [ ] 画像プレビュー（tiny-skia描画）
+- [ ] ターミナル統合（F12トグル）
+- [ ] D&Dドラッグ開始（hayate-ui側スタブ完成待ち）
+
+---
+
+## 設定ファイル
+
+`~/.config/hayate-fileview/config.toml`
+
+```toml
+show_hidden = false
+sort_column = "name"
+sort_order = "asc"
+view_mode = "detail"
+window_width = 750
+window_height = 450
 ```
-src/
-├── main.rs          40行   エントリポイント
-├── config.rs       ???行   設定永続化（~/.config/hayate-fileview/config.toml）
-├── state.rs        175行   アプリケーション状態（パス、エントリ、選択、履歴）
-├── entry.rs        131行   DirEntry（読み込み、ソート、CJK幅対応）
-├── file_list.rs    439行   VirtualViewport仮想スクロール＋ダブルクリック＋テキストキャッシュ
-├── keybindings.rs  264行   キーボードショートカット（Ctrl+C/V/Q、F2、検索等）
-├── file_ops.rs     316行   ファイル操作（コピー/移動/削除/リネーム/新規フォルダ/symlink）
-├── breadcrumb.rs   131行   パンくずナビゲーション＋◀▶履歴ボタン
-├── scroll.rs        98行   ScrollableWidget
-├── preview.rs      229行   プレビューペイン
-├── sidebar.rs      249行   サイドバー（ブックマーク＋マウントポイント）
-├── three_pane.rs   280行   レスポンシブ3ペインレイアウト＋ステータスバー
-├── status_bar.rs   106行   ステータスバー（エラー表示対応）
-└── scroll.rs        98行   ScrollableWidget
+
+Ctrl+Q時に自動保存。起動時に自動読込。
+
+---
+
+## パフォーマンス
+
+- VirtualViewport仮想化: visible_rangeのみ描画（O(visible), not O(N)）
+- TextEngine layout キャッシュ: cosmic-text Bufferを200件キャッシュ
+- PixelScrollPhysics: 慣性スクロール（フレームレート非依存）
+- テキストレイアウトキャッシュ導入で 500ms/frame → 28ms/frame に改善
+
+---
+
+## ビルド手順
+
+```bash
+cd /home/ken/Documents/hayate-linux-fileview
+cargo build          # ビルド
+cargo test           # テスト
+cargo run            # カレントディレクトリを表示
+cargo run -- /path   # 指定パスを表示
+
+# Wayland環境で実行
+WAYLAND_DISPLAY=wayland-1 cargo run --release
 ```
 
 ---
 
-## 3. 実装した機能
+## codex精査結果（2026-03-28実施）
 
-### ナビゲーション
-- ダブルクリックでフォルダに入る / ファイルをxdg-openで開く
-- シングルクリックで選択（Ctrl/Shift修飾対応）
-- Enter: ディレクトリ→ナビゲーション、ファイル→xdg-open
-- Backspace: 親ディレクトリ
-- パンくずナビゲーション（各セグメントクリック可能）
-- サイドバー（ブックマーク＋マウントポイント自動検出）
-- Alt+Left/Right: 戻る/進む履歴（ブラウザ式）
+P0（致命的）4件: 全て修正済み
+- ダブルクリック→xdg-open
+- エラーハンドリング（パーミッション拒否通知）
+- シンボリックリンク対応（循環防止）
+- 安全終了（SAFETYコメント付きexit(0)）
 
-### 表示
-- 3つの表示モード（Tab切替）: Detail / List / Compact
-- レスポンシブペイン: 幅に応じてサイドバー/プレビュー自動非表示
-- カラムヘッダー（Name/Size/Modified）＋ソートインジケータ（▲▼）
-- シンボリックリンク表示（🔗アイコン）
+P1（重要）2件: 全て修正済み
+- レスポンシブペイン（ウィンドウ幅適応）
+- format_size() GB/TB対応 + 重複解消
+
+P2（便利）3件: 全て修正済み
+- 設定永続化（config.toml）
+- 戻る/進む履歴（Alt+Left/Right）
 - CJK文字幅対応（unicode-width）
-- Monospaceフォントでカラム整列
-
-### 選択
-- シングルクリック選択
-- Ctrl+クリック: 個別トグル
-- Shift+クリック: 範囲選択
-- Shift+Up/Down: キーボード範囲選択
-- Ctrl+A: 全選択
-- 選択行ハイライト（▶マーカー＋水色）
-
-### 検索
-- Ctrl+F: インクリメンタルフィルタリング
-- 英数字タイプ: インクリメンタルジャンプ（300msタイムアウト）
-- Escape: 検索解除
-
-### ファイル操作
-- Ctrl+C/V: コピー＆ペースト（内部クリップボード）
-- Delete: XDGゴミ箱（~/.local/share/Trash/）
-- F2: リネーム（_renamedサフィックス）
-- Ctrl+Shift+N: 新規フォルダ作成
-- symlink安全コピー（循環参照防止）
-
-### スクロール
-- マウスホイール
-- キーボード（Up/Down/PageUp/PageDown/Home/End）
-- VirtualViewportによる仮想スクロール（大規模ディレクトリ対応）
-
-### プレビュー
-- テキストファイル: 先頭100行表示（25拡張子対応）
-- バイナリ/画像: ファイル名、サイズ、種類情報
-- プレビュー内スクロール
-
-### エラーハンドリング
-- パーミッションエラー: ステータスバーに赤色表示
-- パス存在チェック: 削除済みディレクトリへのナビゲーション防止
-- read_dir_sorted() Result返却
-
-### 設定
-- ~/.config/hayate-fileview/config.toml
-- 保存項目: show_hidden, sort_column, sort_order, view_mode, window_size
-- Ctrl+Q時に自動保存
-
-### その他
-- 隠しファイルトグル（Ctrl+H）
-- ?キーでヘルプオーバーレイ
-- Ctrl+Q: 安全終了（設定保存後）
-- ファイルサイズ表示（B/KB/MB/GB/TB）
-
----
-
-## 4. パフォーマンス最適化
-
-| 問題 | 対策 | 効果 |
-|------|------|------|
-| 毎フレームcosmic-text layout() | テキストレイアウトキャッシュ（HashMap） | 500ms→28ms/frame |
-| キャッシュ無限成長 | 200件上限、refresh時クリア | メモリ安定 |
-| dirty=true常時再描画 | Widget単位dirtyフラグ | 不要な再描画削減 |
-| イベントがframe callback待ち | メインループで即時dispatch | 入力遅延削減 |
-| 毎フレームlayout() | dirty時のみlayout | CPU削減 |
-
----
-
-## 5. ドッグフーディングでGUI_kitにフィードバックした項目
-
-### GUI_kitに追加した機能
-
-| 機能 | ファイル | 理由 |
-|------|---------|------|
-| WidgetEvent::Scroll | core.rs, app.rs | マウスホイールが伝搬しなかった |
-| PointerPress/Releaseにmodifiers | core.rs, app.rs | Ctrl+クリックが動かなかった |
-| ESC強制終了の削除 | dispatch_impls.rs | ESCを検索解除に使えなかった |
-| process_key()後のmodifiers更新 | keyboard.rs | Ctrl押下のKeyEventでctrl=false |
-| layout()のdirtyスキップ | app.rs | 毎フレームlayoutが重かった |
-| イベント即時dispatch | wayland.rs | イベント遅延16ms |
-| quit_flag API | app.rs | アプリ終了手段がなかった |
-
-### GUI_kitにまだ足りないもの
-
-| 不足 | fileviewの回避策 | あるべき姿 |
-|------|------------------|-----------|
-| アプリ安全終了API | std::process::exit(0) | App::quit()メソッド or quit_flag連携 |
-| 通知/トースト表示 | eprintln!でターミナルに出力 | ポップアップ通知Widget |
-| 外部プロセス起動ヘルパー | std::process::Command直接 | portal.rsに統合 |
-| システムクリップボード連携 | 内部Vec\<PathBuf\> | clipboard.rsのcopy/paste統合 |
-| D&DのAppRunnerアクセス | 未使用（回避不能） | AppからDnD APIを公開 |
-| コンテキストメニュー | 未実装 | popup.rsベースのメニューWidget |
-| 動的ウィンドウタイトル | 起動時固定 | set_title() API |
-| ウィンドウサイズ取得 | config.tomlに手動記録 | window_size() API |
-| ダブルクリック検知 | 自前300ms判定 | WidgetEvent::DoubleClick |
-
----
-
-## 6. 動作確認
-
-### 環境
-- Ubuntu 24.04, weston 13.0.0, NVIDIA GeForce RTX 4070
-- hayate-ui（path依存: ../GUI_kit）
-
-### 確認済み機能（ユーザー手動テスト）
-
-| 機能 | 結果 |
-|------|------|
-| ディレクトリ一覧表示 | ✅ |
-| フォルダナビゲーション | ✅ |
-| マウスホイールスクロール | ✅ |
-| Ctrl+クリック複数選択 | ✅（modifier修正後） |
-| プレビューペイン | ✅ |
-| サイドバー | ✅ |
-| パンくずナビゲーション | ✅ |
-| カラムソート | ✅ |
-| ステータスバー | ✅ |
-| クリック当たり判定 | ✅ |
-
----
-
-## 7. 品質監査
-
-codex + boss1チームによる全コード精査を実施。
-
-### 発見した問題と対応
-
-| 優先度 | 問題 | 対応 |
-|--------|------|------|
-| P0 | ダブルクリック未対応 | 300ms判定＋xdg-open |
-| P0 | エラーハンドリング欠如 | Result返却＋ステータスバー通知 |
-| P0 | symlink循環参照 | symlink_metadata＋リンクコピー |
-| P0 | exit(0)即死 | SAFETYコメント（将来quit API） |
-| P1 | ペイン破綻 | レスポンシブ非表示（350/550px閾値） |
-| P1 | format_size()重複 | GB/TB対応＋共通関数化 |
-| P2 | 設定永続化 | config.toml |
-| P2 | 履歴なし | Alt+Left/Right |
-| P2 | CJK幅ずれ | unicode-width |
-| P2 | キャッシュ無限成長 | 200件上限 |

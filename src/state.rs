@@ -1,6 +1,6 @@
 //! Application state for the file viewer.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -28,13 +28,16 @@ pub(crate) struct FileViewState {
     pub(crate) last_error: Option<String>,
     pub(crate) back_stack: Vec<PathBuf>,
     pub(crate) forward_stack: Vec<PathBuf>,
+    pub(crate) quit_flag: Option<Rc<Cell<bool>>>,
+    pub(crate) title_buffer: Option<Rc<RefCell<Option<String>>>>,
+    pub(crate) system_clipboard: Option<Rc<RefCell<Option<String>>>>,
+    pub(crate) paste_request: Option<Rc<Cell<bool>>>,
+    pub(crate) sidebar_ratio: Rc<Cell<Option<f32>>>,
+    pub(crate) preview_ratio: Rc<Cell<Option<f32>>>,
+    pub(crate) fs_watcher: Option<crate::watcher::FsWatcher>,
 }
 
 impl FileViewState {
-    pub(crate) fn new(path: PathBuf, engine: Rc<RefCell<TextEngine>>) -> Self {
-        Self::new_with_config(path, engine, SortColumn::Name, SortOrder::Asc, false, ViewMode::Detail)
-    }
-
     pub(crate) fn new_with_config(
         path: PathBuf, engine: Rc<RefCell<TextEngine>>,
         sort_column: SortColumn, sort_order: SortOrder,
@@ -44,6 +47,7 @@ impl FileViewState {
             Ok(e) => (e, None),
             Err(e) => (Vec::new(), Some(e)),
         };
+        let fs_watcher = Some(crate::watcher::FsWatcher::new(&path));
         Self {
             current_path: path,
             show_hidden,
@@ -60,6 +64,13 @@ impl FileViewState {
             last_error,
             back_stack: Vec::new(),
             forward_stack: Vec::new(),
+            quit_flag: None,
+            title_buffer: None,
+            system_clipboard: None,
+            paste_request: None,
+            sidebar_ratio: Rc::new(Cell::new(None)),
+            preview_ratio: Rc::new(Cell::new(None)),
+            fs_watcher,
         }
     }
 
@@ -136,6 +147,13 @@ impl FileViewState {
         self.refresh();
     }
 
+    pub(crate) fn update_title(&self) {
+        if let Some(buf) = &self.title_buffer {
+            buf.borrow_mut()
+                .replace(format!("Hayate — {}", self.current_path.display()));
+        }
+    }
+
     pub(crate) fn navigate(&mut self, path: PathBuf) {
         if !path.is_dir() {
             self.last_error = Some(format!("Cannot open: {}", path.display()));
@@ -145,15 +163,17 @@ impl FileViewState {
         self.forward_stack.clear();
         self.current_path = path;
         self.refresh();
+        self.update_title();
+        if let Some(ref mut w) = self.fs_watcher { w.watch(&self.current_path); }
     }
-
-    pub(crate) fn clear_error(&mut self) { self.last_error = None; }
 
     pub(crate) fn go_back(&mut self) {
         if let Some(prev) = self.back_stack.pop() {
             self.forward_stack.push(self.current_path.clone());
             self.current_path = prev;
             self.refresh();
+            self.update_title();
+            if let Some(ref mut w) = self.fs_watcher { w.watch(&self.current_path); }
         }
     }
 
@@ -162,6 +182,8 @@ impl FileViewState {
             self.back_stack.push(self.current_path.clone());
             self.current_path = next;
             self.refresh();
+            self.update_title();
+            if let Some(ref mut w) = self.fs_watcher { w.watch(&self.current_path); }
         }
     }
 
@@ -212,14 +234,134 @@ impl FileViewState {
             _ => {}
         }
     }
+}
 
-    pub(crate) fn visible_entries(&self) -> Vec<(usize, &DirEntry)> {
-        match &self.filtered_indices {
-            None => self.entries.iter().enumerate().collect(),
-            Some(indices) => indices
-                .iter()
-                .filter_map(|&i| self.entries.get(i).map(|e| (i, e)))
-                .collect(),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn make_state(path: &std::path::Path) -> FileViewState {
+        let engine = Rc::new(RefCell::new(TextEngine::new()));
+        FileViewState::new_with_config(
+            path.to_path_buf(), engine,
+            SortColumn::Name, SortOrder::Asc, false, ViewMode::Detail,
+        )
+    }
+
+    #[test]
+    fn navigate_to_valid_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("a.txt"), "").unwrap();
+
+        let mut s = make_state(dir.path());
+        s.navigate(sub.clone());
+        assert_eq!(s.current_path, sub);
+        assert!(s.entries.iter().any(|e| e.name == "a.txt"));
+        assert!(s.last_error.is_none());
+    }
+
+    #[test]
+    fn navigate_to_nonexistent_sets_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = make_state(dir.path());
+        s.navigate(dir.path().join("no_such_dir"));
+        assert!(s.last_error.is_some());
+        assert_eq!(s.current_path, dir.path());
+    }
+
+    #[test]
+    fn go_back_and_forward() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("child");
+        fs::create_dir(&sub).unwrap();
+
+        let mut s = make_state(dir.path());
+        let original = s.current_path.clone();
+        s.navigate(sub.clone());
+        assert_eq!(s.current_path, sub);
+
+        s.go_back();
+        assert_eq!(s.current_path, original);
+        assert!(s.can_go_forward());
+
+        s.go_forward();
+        assert_eq!(s.current_path, sub);
+        assert!(!s.can_go_forward());
+    }
+
+    #[test]
+    fn refresh_picks_up_new_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = make_state(dir.path());
+        let before = s.entries.len();
+
+        fs::write(dir.path().join("new_file.txt"), "hello").unwrap();
+        s.refresh();
+        assert!(s.entries.len() > before);
+        assert!(s.entries.iter().any(|e| e.name == "new_file.txt"));
+    }
+
+    #[test]
+    fn select_single_and_toggle() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a"), "").unwrap();
+        fs::write(dir.path().join("b"), "").unwrap();
+
+        let mut s = make_state(dir.path());
+        s.select_single(0);
+        assert!(s.is_selected(0));
+        assert!(!s.is_selected(1));
+        assert_eq!(s.cursor, Some(0));
+
+        s.toggle_select(1);
+        assert!(s.is_selected(1));
+        s.toggle_select(1);
+        assert!(!s.is_selected(1));
+    }
+
+    #[test]
+    fn select_range() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in &["a", "b", "c", "d"] {
+            fs::write(dir.path().join(name), "").unwrap();
         }
+        let mut s = make_state(dir.path());
+        s.select_range(1, 3);
+        assert!(!s.is_selected(0));
+        assert!(s.is_selected(1));
+        assert!(s.is_selected(2));
+        assert!(s.is_selected(3));
+    }
+
+    #[test]
+    fn set_sort_toggles_order() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("zzz"), "").unwrap();
+        fs::write(dir.path().join("aaa"), "").unwrap();
+
+        let mut s = make_state(dir.path());
+        // Initial: Name Asc. Same column → toggle to Desc.
+        s.set_sort(SortColumn::Name);
+        assert_eq!(s.sort_order, SortOrder::Desc);
+        let first_desc = s.entries[0].name.clone();
+
+        s.set_sort(SortColumn::Name);
+        assert_eq!(s.sort_order, SortOrder::Asc);
+        let first_asc = s.entries[0].name.clone();
+        assert_ne!(first_desc, first_asc);
+    }
+
+    #[test]
+    fn select_all_and_indices() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("x"), "").unwrap();
+        fs::write(dir.path().join("y"), "").unwrap();
+
+        let mut s = make_state(dir.path());
+        s.select_all();
+        assert_eq!(s.selected_indices().len(), s.entries.len());
     }
 }

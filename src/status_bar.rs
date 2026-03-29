@@ -3,14 +3,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hayate_ui::render::TextEngine;
+use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
 use crate::entry::format_size;
 
 const BAR_HEIGHT: f32 = 20.0;
-const BG_COLOR: (u8, u8, u8) = (40, 40, 45);
+const BG_COLOR: (u8, u8, u8) = (32, 34, 40);
 
 /// Information needed to render the status bar.
 pub struct StatusInfo<'a> {
@@ -68,23 +68,25 @@ impl Widget for StatusBar {
         Size::new(constraints.max_width, BAR_HEIGHT)
     }
 
-    fn paint(&self, canvas: &mut [u8], rect: ItemRect, stride: u32) {
-        // Fill background
-        let (bg_r, bg_g, bg_b) = BG_COLOR;
-        let y_start = rect.y.max(0.0) as u32;
-        let y_end = (rect.y + rect.height).min((stride / 4) as f32) as u32;
-        let x_start = rect.x.max(0.0) as u32;
-        let x_end = (rect.x + rect.width) as u32;
-        let canvas_height = canvas.len() as u32 / stride;
+    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+        if let Some((canvas, stride)) = renderer.pixels_mut() {
+            // Fill background
+            let (bg_r, bg_g, bg_b) = BG_COLOR;
+            let y_start = rect.y.max(0.0) as u32;
+            let y_end = (rect.y + rect.height).min((stride / 4) as f32) as u32;
+            let x_start = rect.x.max(0.0) as u32;
+            let x_end = (rect.x + rect.width) as u32;
+            let canvas_height = canvas.len() as u32 / stride;
 
-        for py in y_start..y_end.min(canvas_height) {
-            for px in x_start..x_end {
-                let offset = (py * stride + px * 4) as usize;
-                if offset + 3 < canvas.len() {
-                    canvas[offset] = bg_b;
-                    canvas[offset + 1] = bg_g;
-                    canvas[offset + 2] = bg_r;
-                    canvas[offset + 3] = 255;
+            for py in y_start..y_end.min(canvas_height) {
+                for px in x_start..x_end {
+                    let offset = (py * stride + px * 4) as usize;
+                    if offset + 3 < canvas.len() {
+                        canvas[offset] = bg_b;
+                        canvas[offset + 1] = bg_g;
+                        canvas[offset + 2] = bg_r;
+                        canvas[offset + 3] = 255;
+                    }
                 }
             }
         }
@@ -98,7 +100,7 @@ impl Widget for StatusBar {
                 .with_color(r, g, b);
             let text_constraints = Constraints::tight(rect.width, BAR_HEIGHT);
             text.layout(&text_constraints);
-            text.paint(canvas, rect, stride);
+            text.paint(renderer, rect);
         }
     }
 

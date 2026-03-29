@@ -7,15 +7,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// Result of a file operation.
-#[derive(Debug)]
-pub enum FileOpResult {
-    /// Number of files successfully processed.
-    Done(usize),
-    /// Partial success: completed count and first error encountered.
-    Partial(usize, io::Error),
-}
-
 /// Parse a `text/uri-list` payload (as defined by RFC 2483) into file paths.
 ///
 /// - Lines starting with `#` are comments and skipped.
@@ -70,62 +61,6 @@ pub fn copy_to(src: &Path, dest_dir: &Path) -> io::Result<PathBuf> {
         fs::copy(src, &dest)?;
     }
     Ok(dest)
-}
-
-/// Move a single file or directory into `dest_dir`.
-///
-/// Tries `fs::rename` first (same-device fast path). Falls back to
-/// copy-then-remove for cross-device moves.
-pub fn move_to(src: &Path, dest_dir: &Path) -> io::Result<PathBuf> {
-    let file_name = src
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file name"))?;
-    let dest = unique_path(&dest_dir.join(file_name));
-
-    match fs::rename(src, &dest) {
-        Ok(()) => Ok(dest),
-        Err(e) if e.raw_os_error() == Some(libc::EXDEV) => {
-            // Cross-device: copy then remove original.
-            if src.is_dir() {
-                copy_dir_recursive(src, &dest)?;
-                fs::remove_dir_all(src)?;
-            } else {
-                fs::copy(src, &dest)?;
-                fs::remove_file(src)?;
-            }
-            Ok(dest)
-        }
-        Err(e) => Err(e),
-    }
-}
-
-/// Delete a file or directory (recursively).
-pub fn delete(path: &Path) -> io::Result<()> {
-    if path.is_dir() {
-        fs::remove_dir_all(path)
-    } else {
-        fs::remove_file(path)
-    }
-}
-
-/// Batch-copy a list of paths into `dest_dir`.
-pub fn copy_batch(sources: &[PathBuf], dest_dir: &Path) -> FileOpResult {
-    run_batch(sources, |src| {
-        copy_to(src, dest_dir).map(|_| ())
-    })
-}
-
-/// Batch-move a list of paths into `dest_dir`.
-pub fn move_batch(sources: &[PathBuf], dest_dir: &Path) -> FileOpResult {
-    run_batch(sources, |src| {
-        move_to(src, dest_dir).map(|_| ())
-    })
-}
-
-/// Process a `text/uri-list` drop payload: parse URIs and copy files.
-pub fn handle_uri_drop(uri_list: &str, dest_dir: &Path) -> FileOpResult {
-    let paths = parse_uri_list(uri_list);
-    copy_batch(&paths, dest_dir)
 }
 
 /// Move a file or directory to the XDG Trash (freedesktop.org spec).
@@ -216,20 +151,6 @@ pub fn create_directory(parent: &Path) -> io::Result<PathBuf> {
 
 // ── helpers ──
 
-fn run_batch<F>(sources: &[PathBuf], mut op: F) -> FileOpResult
-where
-    F: FnMut(&Path) -> io::Result<()>,
-{
-    let mut done = 0usize;
-    for src in sources {
-        match op(src) {
-            Ok(()) => done += 1,
-            Err(e) => return FileOpResult::Partial(done, e),
-        }
-    }
-    FileOpResult::Done(done)
-}
-
 /// Generate a unique path by appending `(N)` before the extension if needed.
 fn unique_path(candidate: &Path) -> PathBuf {
     if !candidate.exists() {
@@ -316,8 +237,75 @@ mod tests {
 
     #[test]
     fn unique_path_no_conflict() {
-        // Non-existent path returns as-is
         let p = PathBuf::from("/tmp/__nonexistent_test_file_12345__.txt");
         assert_eq!(unique_path(&p), p);
+    }
+
+    #[test]
+    fn copy_to_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("original.txt");
+        fs::write(&src, "hello").unwrap();
+        let dest_dir = dir.path().join("dest");
+        fs::create_dir(&dest_dir).unwrap();
+        let result = copy_to(&src, &dest_dir).unwrap();
+        assert_eq!(result, dest_dir.join("original.txt"));
+        assert_eq!(fs::read_to_string(&result).unwrap(), "hello");
+        // Original still exists
+        assert!(src.exists());
+    }
+
+    #[test]
+    fn copy_to_dedup_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let src_dir = dir.path().join("src");
+        let dest_dir = dir.path().join("dest");
+        fs::create_dir_all(&src_dir).unwrap();
+        fs::create_dir_all(&dest_dir).unwrap();
+        let src = src_dir.join("file.txt");
+        fs::write(&src, "v1").unwrap();
+        let r1 = copy_to(&src, &dest_dir).unwrap();
+        assert_eq!(r1.file_name().unwrap(), "file.txt");
+        // Copy again → should create file(1).txt
+        let r2 = copy_to(&src, &dest_dir).unwrap();
+        assert_eq!(r2.file_name().unwrap(), "file(1).txt");
+    }
+
+    #[test]
+    fn rename_file_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("old.txt");
+        fs::write(&src, "data").unwrap();
+        let result = rename_file(&src, "new.txt").unwrap();
+        assert_eq!(result, dir.path().join("new.txt"));
+        assert!(!src.exists());
+        assert_eq!(fs::read_to_string(&result).unwrap(), "data");
+    }
+
+    #[test]
+    fn rename_file_already_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "").unwrap();
+        fs::write(dir.path().join("b.txt"), "").unwrap();
+        let err = rename_file(&dir.path().join("a.txt"), "b.txt");
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+    }
+
+    #[test]
+    fn create_directory_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = create_directory(dir.path()).unwrap();
+        assert_eq!(result.file_name().unwrap(), "New Folder");
+        assert!(result.is_dir());
+    }
+
+    #[test]
+    fn create_directory_dedup() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("New Folder")).unwrap();
+        let result = create_directory(dir.path()).unwrap();
+        assert_eq!(result.file_name().unwrap(), "New Folder(1)");
+        assert!(result.is_dir());
     }
 }

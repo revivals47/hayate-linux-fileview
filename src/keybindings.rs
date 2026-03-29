@@ -6,18 +6,22 @@ use std::time::Instant;
 use xkbcommon::xkb::Keysym;
 
 use hayate_ui::widget::core::EventResponse;
+use hayate_ui::widget::toast::ToastLevel;
 use hayate_ui::platform::keyboard::KeyEvent;
 
 use crate::entry::SortColumn;
 use crate::file_list::{FileListWidget, JUMP_TIMEOUT_MS};
 
 pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventResponse {
-    // Ctrl+Q → save config and quit
-    // SAFETY: No in-flight async I/O. Wayland cleanup is handled by drop.
+    // Ctrl+Q → save config and graceful quit via quit_flag
     if ke.modifiers.ctrl && ke.keysym == Keysym::q {
-        let cfg = crate::config::Config::from_state(&w.state.borrow());
+        let state = w.state.borrow();
+        let cfg = crate::config::Config::from_state(&state);
         cfg.save();
-        std::process::exit(0);
+        if let Some(ref qf) = state.quit_flag {
+            qf.set(true);
+        }
+        return EventResponse::Handled;
     }
 
     // ── Search mode ──
@@ -163,16 +167,24 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
             .map(|&i| state.current_path.join(&state.entries[i].name))
             .collect();
         let count = paths.len();
+        // Write to system clipboard as text/uri-list
+        if let Some(ref buf) = state.system_clipboard {
+            let uri_list = paths.iter()
+                .map(|p| format!("file://{}", p.display()))
+                .collect::<Vec<_>>()
+                .join("\r\n");
+            buf.borrow_mut().replace(uri_list);
+        }
         drop(state);
         w.clipboard = paths;
         eprintln!("[file_ops] Copied {} file(s) to clipboard", count);
+        w.toast.borrow_mut().show(format!("Copied {count} file(s)"), ToastLevel::Info, 2.0);
         return EventResponse::Handled;
     }
     if ke.modifiers.ctrl && ke.keysym == Keysym::v && debounce_ok {
         w.last_file_op = Some(now);
-        if w.clipboard.is_empty() {
-            eprintln!("[file_ops] Ctrl+V: clipboard is empty");
-        } else {
+        if !w.clipboard.is_empty() {
+            // Internal buffer has files — paste directly
             let dest = w.state.borrow().current_path.clone();
             let mut ok = 0usize;
             for src in &w.clipboard {
@@ -181,9 +193,15 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
                     Err(e) => eprintln!("[file_ops] copy error: {}: {}", src.display(), e),
                 }
             }
-            eprintln!("[file_ops] Pasted {}/{} file(s)", ok, w.clipboard.len());
+            let total = w.clipboard.len();
+            eprintln!("[file_ops] Pasted {ok}/{total} file(s)");
+            w.toast.borrow_mut().show(format!("Pasted {ok}/{total} file(s)"), ToastLevel::Success, 3.0);
             w.state.borrow_mut().refresh();
             w.refresh_viewport();
+        } else if let Some(ref pr) = w.state.borrow().paste_request {
+            // Internal buffer empty — request paste from system clipboard
+            pr.set(true);
+            w.pending_file_paste = true;
         }
         return EventResponse::Handled;
     }
@@ -205,36 +223,23 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
                     Err(e) => eprintln!("[file_ops] trash error: {}: {}", p.display(), e),
                 }
             }
-            eprintln!("[file_ops] Trashed {}/{} file(s)", ok, paths.len());
+            let total = paths.len();
+            eprintln!("[file_ops] Trashed {ok}/{total} file(s)");
+            w.toast.borrow_mut().show(format!("Moved {ok} file(s) to trash"), ToastLevel::Info, 3.0);
             w.state.borrow_mut().refresh();
             w.refresh_viewport();
         }
         return EventResponse::Handled;
     }
-    // F2 → rename selected file/directory
+    // F2 → start inline rename
     if ke.keysym == Keysym::F2 && debounce_ok {
         w.last_file_op = Some(now);
         let state = w.state.borrow();
         if let Some(idx) = state.cursor {
             if idx < state.entries.len() {
-                let entry = &state.entries[idx];
-                let old_path = state.current_path.join(&entry.name);
-                let stem = std::path::Path::new(&entry.name)
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy();
-                let ext = std::path::Path::new(&entry.name)
-                    .extension()
-                    .map(|e| format!(".{}", e.to_string_lossy()))
-                    .unwrap_or_default();
-                let new_name = format!("{}_renamed{}", stem, ext);
+                let name = state.entries[idx].name.clone();
                 drop(state);
-                match crate::file_ops::rename_file(&old_path, &new_name) {
-                    Ok(p) => eprintln!("[file_ops] Renamed to: {}", p.display()),
-                    Err(e) => eprintln!("[file_ops] Rename failed: {}", e),
-                }
-                w.state.borrow_mut().refresh();
-                w.refresh_viewport();
+                crate::rename_ui::start_rename(w, idx, &name);
             }
         }
         return EventResponse::Handled;
@@ -247,8 +252,14 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         w.last_file_op = Some(now);
         let dir = w.state.borrow().current_path.clone();
         match crate::file_ops::create_directory(&dir) {
-            Ok(p) => eprintln!("[file_ops] Created: {}", p.display()),
-            Err(e) => eprintln!("[file_ops] Create folder failed: {}", e),
+            Ok(p) => {
+                eprintln!("[file_ops] Created: {}", p.display());
+                w.toast.borrow_mut().show("Created folder", ToastLevel::Success, 2.0);
+            }
+            Err(e) => {
+                eprintln!("[file_ops] Create folder failed: {e}");
+                w.toast.borrow_mut().show(format!("Create folder failed: {e}"), ToastLevel::Error, 5.0);
+            }
         }
         w.state.borrow_mut().refresh();
         w.refresh_viewport();
@@ -286,4 +297,20 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         }
     }
     EventResponse::Ignored
+}
+
+/// Process system clipboard paste result (text/uri-list).
+pub(crate) fn handle_clipboard_paste(w: &mut FileListWidget, text: &str) {
+    let paths = crate::file_ops::parse_uri_list(text);
+    if paths.is_empty() { return; }
+    let dest = w.state.borrow().current_path.clone();
+    let mut ok = 0usize;
+    for src in &paths {
+        if crate::file_ops::copy_to(src, &dest).is_ok() { ok += 1; }
+    }
+    let total = paths.len();
+    eprintln!("[paste] Pasted {ok}/{total} file(s) from system clipboard");
+    w.toast.borrow_mut().show(format!("Pasted {ok}/{total} file(s)"), ToastLevel::Success, 3.0);
+    w.state.borrow_mut().refresh();
+    w.refresh_viewport();
 }

@@ -5,10 +5,10 @@ use unicode_width::UnicodeWidthChar;
 
 // ── Sort types ──
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum SortColumn { Name, Size, Modified }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum SortOrder { Asc, Desc }
 
 impl SortOrder {
@@ -24,7 +24,6 @@ pub(crate) struct DirEntry {
     pub(crate) is_symlink: bool,
     pub(crate) size: u64,
     pub(crate) modified: Option<std::time::SystemTime>,
-    pub(crate) mode: u32,
 }
 
 /// Format a byte count as a human-readable string (B / KB / MB / GB / TB).
@@ -89,23 +88,6 @@ impl DirEntry {
         }
     }
 
-    #[cfg(unix)]
-    pub(crate) fn format_mode(&self) -> String {
-        let mut s = String::with_capacity(9);
-        for shift in [6, 3, 0] {
-            let bits = (self.mode >> shift) & 0o7;
-            s.push(if bits & 4 != 0 { 'r' } else { '-' });
-            s.push(if bits & 2 != 0 { 'w' } else { '-' });
-            s.push(if bits & 1 != 0 { 'x' } else { '-' });
-        }
-        s
-    }
-
-    #[cfg(not(unix))]
-    pub(crate) fn format_mode(&self) -> String {
-        "---------".to_string()
-    }
-
     pub(crate) fn display_line(&self) -> String {
         let icon = if self.is_symlink { "🔗  " } else if self.is_dir { "📁  " } else { "    " };
         let name = if self.is_dir { format!("{}/", self.name) } else { self.name.clone() };
@@ -130,14 +112,7 @@ pub(crate) fn read_dir_sorted(path: &Path, show_hidden: bool, col: SortColumn, o
         let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified = meta.as_ref().and_then(|m| m.modified().ok());
-        #[cfg(unix)]
-        let mode = {
-            use std::os::unix::fs::PermissionsExt;
-            meta.as_ref().map(|m| m.permissions().mode()).unwrap_or(0)
-        };
-        #[cfg(not(unix))]
-        let mode = 0u32;
-        entries.push(DirEntry { name, is_dir, is_symlink, size, modified, mode });
+        entries.push(DirEntry { name, is_dir, is_symlink, size, modified });
     }
     entries.sort_by(|a, b| {
         let dir_cmp = b.is_dir.cmp(&a.is_dir);

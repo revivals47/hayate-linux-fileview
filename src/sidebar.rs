@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::TextEngine;
+use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 use hayate_ui::widget::text_widget::RichTextWidget;
@@ -189,21 +189,23 @@ impl Widget for SidebarWidget {
         Size::new(self.width, self.height)
     }
 
-    fn paint(&self, canvas: &mut [u8], rect: ItemRect, stride: u32) {
-        // Fill background
-        let (bg_r, bg_g, bg_b) = BG_COLOR;
-        let x0 = rect.x.max(0.0) as u32;
-        let y0 = rect.y.max(0.0) as u32;
-        let x1 = (rect.x + rect.width) as u32;
-        let y1 = (rect.y + rect.height) as u32;
-        for py in y0..y1 {
-            for px in x0..x1 {
-                let offset = (py * stride + px * 4) as usize;
-                if offset + 3 < canvas.len() {
-                    canvas[offset] = bg_b;
-                    canvas[offset + 1] = bg_g;
-                    canvas[offset + 2] = bg_r;
-                    canvas[offset + 3] = 255;
+    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+        if let Some((canvas, stride)) = renderer.pixels_mut() {
+            // Fill background
+            let (bg_r, bg_g, bg_b) = BG_COLOR;
+            let x0 = rect.x.max(0.0) as u32;
+            let y0 = rect.y.max(0.0) as u32;
+            let x1 = (rect.x + rect.width) as u32;
+            let y1 = (rect.y + rect.height) as u32;
+            for py in y0..y1 {
+                for px in x0..x1 {
+                    let offset = (py * stride + px * 4) as usize;
+                    if offset + 3 < canvas.len() {
+                        canvas[offset] = bg_b;
+                        canvas[offset + 1] = bg_g;
+                        canvas[offset + 2] = bg_r;
+                        canvas[offset + 3] = 255;
+                    }
                 }
             }
         }
@@ -224,7 +226,7 @@ impl Widget for SidebarWidget {
                 row_width,
                 ROW_HEIGHT,
             );
-            w.paint(canvas, row_rect, stride);
+            w.paint(renderer, row_rect);
         }
     }
 

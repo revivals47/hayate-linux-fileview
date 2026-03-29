@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use tiny_skia::Color;
 use hayate_ui::platform::keyboard::KeyState;
-use hayate_ui::render::{FontFamily, TextEngine, TextParams};
+use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
@@ -30,6 +30,8 @@ pub(crate) struct BreadcrumbWidget {
     width: f32,
     back_x0: f32, back_x1: f32,
     fwd_x0: f32,  fwd_x1: f32,
+    /// Active address bar text input (Ctrl+L).
+    editing: Option<hayate_ui::widget::TextInputWidget>,
 }
 
 fn col(r: u8, g: u8, b: u8) -> Color { Color::from_rgba8(r, g, b, 255) }
@@ -51,6 +53,7 @@ impl BreadcrumbWidget {
         let mut w = Self {
             state, engine, segs: Vec::new(), width: 0.0,
             back_x0: 0.0, back_x1: 0.0, fwd_x0: 0.0, fwd_x1: 0.0,
+            editing: None,
         };
         w.update_segments();
         w
@@ -85,6 +88,40 @@ impl BreadcrumbWidget {
         self.segs.iter().find(|s| x >= s.x0 && x < s.x1)
     }
 
+    /// Enter address bar edit mode (Ctrl+L).
+    pub(crate) fn start_editing(&mut self) {
+        use hayate_ui::widget::TextInputWidget;
+        let path_str = self.state.borrow().current_path.display().to_string();
+        let mut input = TextInputWidget::new(self.engine.clone()).with_width(self.width);
+        input.input_mut().insert_str(&path_str);
+        input.input_mut().select_all();
+        input.input_mut().set_focused(true);
+        self.editing = Some(input);
+    }
+
+    /// Commit the typed path and navigate. Returns true if navigation succeeded.
+    pub(crate) fn finish_editing(&mut self) -> bool {
+        let input = match self.editing.take() {
+            Some(w) => w,
+            None => return false,
+        };
+        let text = input.text().trim().to_string();
+        let path = PathBuf::from(&text);
+        if path.is_dir() {
+            self.state.borrow_mut().navigate(path);
+            self.update_segments();
+            true
+        } else {
+            eprintln!("[breadcrumb] Invalid path: {text}");
+            false
+        }
+    }
+
+    /// Cancel address bar editing (Escape).
+    pub(crate) fn cancel_editing(&mut self) {
+        self.editing = None;
+    }
+
     fn draw(engine: &mut TextEngine, canvas: &mut [u8], stride: u32, rect: &ItemRect,
             x: f32, text: &str, color: Color, w: f32) {
         let p = TextParams { text, font_size: FONT_SIZE, line_height: BAR_HEIGHT, color, family: FontFamily::Monospace };
@@ -99,31 +136,68 @@ impl Widget for BreadcrumbWidget {
         Size::new(constraints.max_width, BAR_HEIGHT)
     }
 
-    fn paint(&self, canvas: &mut [u8], rect: ItemRect, stride: u32) {
-        let bg_rect = ItemRect::new(rect.x, rect.y, rect.width, BAR_HEIGHT);
-        fill_bg(canvas, &bg_rect, stride, BG.0, BG.1, BG.2);
+    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+        if let Some((canvas, stride)) = renderer.pixels_mut() {
+            let bg_rect = ItemRect::new(rect.x, rect.y, rect.width, BAR_HEIGHT);
+            fill_bg(canvas, &bg_rect, stride, BG.0, BG.1, BG.2);
 
-        let mut engine = self.engine.borrow_mut();
-        let mw = (self.width - PAD_X).max(0.0);
-        let st = self.state.borrow();
-        // Back/forward buttons
-        let back_c = if st.can_go_back() { col(180,180,190) } else { col(60,60,60) };
-        let fwd_c = if st.can_go_forward() { col(180,180,190) } else { col(60,60,60) };
-        drop(st);
-        Self::draw(&mut engine, canvas, stride, &rect, self.back_x0, "◀", back_c, mw);
-        Self::draw(&mut engine, canvas, stride, &rect, self.fwd_x0, "▶", fwd_c, mw);
-        // Path segments
-        let last = self.segs.len().saturating_sub(1);
-        for (i, s) in self.segs.iter().enumerate() {
-            if i > 0 {
-                Self::draw(&mut engine, canvas, stride, &rect, s.x0 - CHAR_W*3.0, " > ", col(80,80,90), mw);
+            // Address bar edit mode — draw TextInputWidget instead of breadcrumbs
+            if self.editing.is_some() {
+                // Fall through to widget paint below
+            } else {
+                let mut engine = self.engine.borrow_mut();
+                let mw = (self.width - PAD_X).max(0.0);
+                let st = self.state.borrow();
+                // Back/forward buttons
+                let back_c = if st.can_go_back() { col(180,180,190) } else { col(60,60,60) };
+                let fwd_c = if st.can_go_forward() { col(180,180,190) } else { col(60,60,60) };
+                drop(st);
+                Self::draw(&mut engine, canvas, stride, &rect, self.back_x0, "◀", back_c, mw);
+                Self::draw(&mut engine, canvas, stride, &rect, self.fwd_x0, "▶", fwd_c, mw);
+                // Path segments
+                let last = self.segs.len().saturating_sub(1);
+                for (i, s) in self.segs.iter().enumerate() {
+                    if i > 0 {
+                        Self::draw(&mut engine, canvas, stride, &rect, s.x0 - CHAR_W*3.0, " > ", col(80,80,90), mw);
+                    }
+                    let c = if i == last { col(140,200,255) } else { col(160,160,170) };
+                    Self::draw(&mut engine, canvas, stride, &rect, s.x0, &s.label, c, mw);
+                }
+                return;
             }
-            let c = if i == last { col(140,200,255) } else { col(160,160,170) };
-            Self::draw(&mut engine, canvas, stride, &rect, s.x0, &s.label, c, mw);
+        }
+
+        // Address bar edit mode — paint TextInputWidget via Renderer
+        if let Some(ref input) = self.editing {
+            let input_rect = ItemRect::new(rect.x + PAD_X, rect.y, self.width - PAD_X * 2.0, BAR_HEIGHT);
+            input.paint(renderer, input_rect);
         }
     }
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
+        // Address bar edit mode — route events to TextInputWidget
+        if self.editing.is_some() {
+            // Intercept Escape and Enter before forwarding
+            if let WidgetEvent::Key(ke) = event {
+                if ke.state == KeyState::Pressed {
+                    if ke.keysym == xkbcommon::xkb::Keysym::Escape {
+                        self.cancel_editing();
+                        return EventResponse::Handled;
+                    }
+                    if ke.keysym == xkbcommon::xkb::Keysym::Return
+                        || ke.keysym == xkbcommon::xkb::Keysym::KP_Enter
+                    {
+                        self.finish_editing();
+                        return EventResponse::Handled;
+                    }
+                }
+            }
+            if let Some(ref mut input) = self.editing {
+                input.event(event);
+            }
+            return EventResponse::Handled;
+        }
+
         match event {
             WidgetEvent::PointerPress { x, button: 0x110, .. } => {
                 // Back button
@@ -151,7 +225,7 @@ impl Widget for BreadcrumbWidget {
             }
             WidgetEvent::Key(ke) if ke.state == KeyState::Pressed => {
                 if ke.modifiers.ctrl && ke.keysym == xkbcommon::xkb::Keysym::l {
-                    eprintln!("[breadcrumb] Ctrl+L: address bar edit mode (stub)");
+                    self.start_editing();
                     return EventResponse::Handled;
                 }
                 EventResponse::Ignored

@@ -8,8 +8,7 @@ use std::time::Instant;
 use tiny_skia::Color;
 
 use hayate_ui::platform::keyboard::KeyState;
-use std::collections::HashMap;
-use hayate_ui::render::{FontFamily, TextEngine, TextParams};
+use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::scroll::physics::PixelScrollPhysics;
 use hayate_ui::scroll::viewport::VirtualViewport;
@@ -21,7 +20,6 @@ use crate::state::{FileViewState, ViewMode};
 // ── Layout constants ──
 
 const ROW_HEIGHT: f32 = 18.0;
-const LIST_ROW_HEIGHT: f32 = 14.0;
 const COMPACT_COLS: usize = 3;
 /// Fixed rows: header, separator, column header, column separator, parent (..)
 const FIXED_ROWS: usize = 5;
@@ -32,7 +30,7 @@ const COL_SEP_ROW: usize = 3;
 const PARENT_ROW: usize = 4;
 const PADDING: f32 = 12.0;
 pub(crate) const JUMP_TIMEOUT_MS: u128 = 300;
-const TEXT_CACHE_MAX: usize = 200;
+const TEXT_CACHE_CAP: usize = 200;
 
 fn color_rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba8(r, g, b, 255)
@@ -44,7 +42,7 @@ pub(crate) struct FileListWidget {
     pub(crate) state: Rc<RefCell<FileViewState>>,
     pub(crate) viewport: VirtualViewport,
     engine: Rc<RefCell<TextEngine>>,
-    width: f32,
+    pub(crate) width: f32,
     pub(crate) height: f32,
     ctrl_held: bool,
     shift_held: bool,
@@ -53,15 +51,20 @@ pub(crate) struct FileListWidget {
     pub(crate) jump_last_input: Option<Instant>,
     pub(crate) search_mode: bool,
     pub(crate) last_file_op: Option<Instant>,
-    pub(crate) last_click_time: Option<Instant>,
-    pub(crate) last_click_idx: Option<usize>,
+    pub(crate) rename_state: Option<crate::rename_ui::RenameState>,
+    pub(crate) context_menu: hayate_ui::widget::ContextMenu,
+    pub(crate) pending_file_paste: bool,
+    pub(crate) toast: Rc<RefCell<hayate_ui::widget::toast::ToastWidget>>,
     is_dirty: bool,
-    /// Cached cosmic_text Buffers keyed by (row_text, font_size_bits).
-    text_cache: RefCell<HashMap<(String, u32), cosmic_text::Buffer>>,
+    /// LRU cache of cosmic_text Buffers keyed by (row_text, font_size_bits).
+    pub(crate) text_cache: RefCell<crate::lru_cache::LruCache<(String, u32), cosmic_text::Buffer>>,
 }
 
 impl FileListWidget {
-    pub(crate) fn new(state: Rc<RefCell<FileViewState>>) -> Self {
+    pub(crate) fn new(
+        state: Rc<RefCell<FileViewState>>,
+        toast: Rc<RefCell<hayate_ui::widget::toast::ToastWidget>>,
+    ) -> Self {
         let engine = state.borrow().engine.clone();
         let entry_count = state.borrow().entries.len();
         let physics = Box::new(PixelScrollPhysics::new());
@@ -80,10 +83,12 @@ impl FileListWidget {
             jump_last_input: None,
             search_mode: false,
             last_file_op: None,
-            last_click_time: None,
-            last_click_idx: None,
+            rename_state: None,
+            context_menu: crate::context_handler::build_menu(),
+            pending_file_paste: false,
+            toast,
             is_dirty: true,
-            text_cache: RefCell::new(HashMap::new()),
+            text_cache: RefCell::new(crate::lru_cache::LruCache::new(TEXT_CACHE_CAP)),
         }
     }
 
@@ -91,9 +96,11 @@ impl FileListWidget {
         &self.state
     }
 
-    /// Refresh after external state changes (e.g. sidebar navigation).
-    pub(crate) fn rebuild(&mut self) {
-        self.refresh_viewport();
+    pub(crate) fn rebuild(&mut self) { self.refresh_viewport(); }
+    pub(crate) fn viewport_offset(&self) -> f32 { self.viewport.scroll_offset() }
+    pub(crate) fn set_viewport_offset(&mut self, offset: f32) {
+        let delta = offset - self.viewport.scroll_offset();
+        if delta.abs() > 0.1 { self.viewport.scroll(delta, 1.0); }
     }
 
     pub(crate) fn refresh_viewport(&mut self) {
@@ -117,12 +124,7 @@ impl FileListWidget {
         }
     }
 
-    /// Map viewport-space Y (and X for Compact) to a hit target.
-    fn y_to_hit(&self, y: f32) -> Option<YHit> {
-        self.y_x_to_hit(y, 0.0)
-    }
-
-    fn y_x_to_hit(&self, y: f32, x: f32) -> Option<YHit> {
+    pub(crate) fn y_x_to_hit(&self, y: f32, x: f32) -> Option<YHit> {
         let content_y = y + self.viewport.scroll_offset();
         if content_y < 0.0 { return None; }
         let row = (content_y / ROW_HEIGHT) as usize;
@@ -176,7 +178,7 @@ impl FileListWidget {
     }
 
     fn draw_text_row(
-        cache: &RefCell<HashMap<(String, u32), cosmic_text::Buffer>>,
+        cache: &RefCell<crate::lru_cache::LruCache<(String, u32), cosmic_text::Buffer>>,
         engine: &mut TextEngine,
         canvas: &mut [u8],
         stride: u32,
@@ -191,10 +193,7 @@ impl FileListWidget {
     ) {
         let key = (text.to_string(), font_size.to_bits());
         let mut text_cache = cache.borrow_mut();
-        if text_cache.len() > TEXT_CACHE_MAX {
-            text_cache.clear();
-        }
-        let buffer = text_cache.entry(key).or_insert_with(|| {
+        let buffer = text_cache.get_or_insert_with(key, || {
             let params = TextParams {
                 text,
                 font_size,
@@ -217,7 +216,7 @@ impl FileListWidget {
     }
 }
 
-enum YHit {
+pub(crate) enum YHit {
     ColumnHeader,
     Parent,
     Entry(usize),
@@ -231,122 +230,133 @@ impl Widget for FileListWidget {
         Size::new(constraints.max_width, constraints.max_height)
     }
 
-    fn paint(&self, canvas: &mut [u8], rect: ItemRect, stride: u32) {
-        let state = self.state.borrow();
-        let mut engine = self.engine.borrow_mut();
-        let range = self.viewport.visible_range();
-        let max_w = (self.width - PADDING * 2.0).max(0.0);
+    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+        if let Some((canvas, stride)) = renderer.pixels_mut() {
+            let state = self.state.borrow();
+            let mut engine = self.engine.borrow_mut();
+            let range = self.viewport.visible_range();
+            let max_w = (self.width - PADDING * 2.0).max(0.0);
 
-        for virt_idx in range {
-            let y = self.viewport.item_y_in_viewport(virt_idx);
-            if y + ROW_HEIGHT < 0.0 || y > self.height {
-                continue;
-            }
+            for virt_idx in range {
+                let y = self.viewport.item_y_in_viewport(virt_idx);
+                if y + ROW_HEIGHT < 0.0 || y > self.height {
+                    continue;
+                }
 
-            match virt_idx {
-                HEADER_ROW => {
-                    let hidden = if state.show_hidden { " [H]" } else { "" };
-                    let search_indicator = match &state.search_query {
-                        Some(q) => format!("  [Search: {}]", q),
-                        None => String::new(),
-                    };
-                    let text = format!("  {}{}{}", state.current_path.display(), hidden, search_indicator);
-                    Self::draw_text_row(&self.text_cache, 
-                        &mut engine, canvas, stride, &rect, PADDING, y,
-                        &text, 16.0, color_rgb(100, 180, 255), max_w, self.height,
-                    );
-                }
-                SEP_ROW | COL_SEP_ROW => {
-                    let text = "─".repeat(60);
-                    Self::draw_text_row(&self.text_cache, 
-                        &mut engine, canvas, stride, &rect, PADDING, y,
-                        &text, 8.0, color_rgb(60, 60, 60), max_w, self.height,
-                    );
-                }
-                COL_HEADER_ROW => {
-                    let ind = state.sort_order.indicator();
-                    let ni = if state.sort_column == SortColumn::Name { ind } else { " " };
-                    let si = if state.sort_column == SortColumn::Size { ind } else { " " };
-                    let mi = if state.sort_column == SortColumn::Modified { ind } else { " " };
-                    let text = format!(
-                        "    Name {}{:<12} {:>8}{}  {}{}",
-                        ni, "", "Size", si, "Modified", mi
-                    );
-                    Self::draw_text_row(&self.text_cache, 
-                        &mut engine, canvas, stride, &rect, PADDING, y,
-                        &text, 11.0, color_rgb(120, 120, 120), max_w, self.height,
-                    );
-                }
-                PARENT_ROW => {
-                    Self::draw_text_row(&self.text_cache, 
-                        &mut engine, canvas, stride, &rect, PADDING, y,
-                        "📁  ../", 11.0, color_rgb(150, 150, 220), max_w, self.height,
-                    );
-                }
-                _ => {
-                    let virt_row = virt_idx - FIXED_ROWS;
-                    match state.view_mode {
-                        ViewMode::Detail => {
-                            let entry_idx = resolve_vis_idx(&state, virt_row);
-                            let Some(entry_idx) = entry_idx else { continue };
-                            let entry = &state.entries[entry_idx];
-                            let selected = state.is_selected(entry_idx);
-                            let color = entry_color(selected, entry.is_dir);
-                            let line = if selected {
-                                format!("▶ {}", entry.display_line().trim_start())
-                            } else {
-                                entry.display_line()
-                            };
-                            Self::draw_text_row(&self.text_cache,
-                                &mut engine, canvas, stride, &rect, PADDING, y,
-                                &line, 11.0, color, max_w, self.height,
-                            );
-                        }
-                        ViewMode::List => {
-                            let entry_idx = resolve_vis_idx(&state, virt_row);
-                            let Some(entry_idx) = entry_idx else { continue };
-                            let entry = &state.entries[entry_idx];
-                            let selected = state.is_selected(entry_idx);
-                            let color = entry_color(selected, entry.is_dir);
-                            let icon = if entry.is_dir { "📁 " } else { "   " };
-                            let name: String = entry.name.chars().take(40).collect();
-                            let line = if selected {
-                                format!("▶ {}{}", icon.trim_start(), name)
-                            } else {
-                                format!("{}{}", icon, name)
-                            };
-                            Self::draw_text_row(&self.text_cache,
-                                &mut engine, canvas, stride, &rect, PADDING, y,
-                                &line, 11.0, color, max_w, self.height,
-                            );
-                        }
-                        ViewMode::Compact => {
-                            let col_w = (self.width - PADDING * 2.0) / COMPACT_COLS as f32;
-                            for col in 0..COMPACT_COLS {
-                                let vis_idx = virt_row * COMPACT_COLS + col;
-                                let entry_idx = resolve_vis_idx(&state, vis_idx);
+                match virt_idx {
+                    HEADER_ROW => {
+                        let hidden = if state.show_hidden { " [H]" } else { "" };
+                        let search_indicator = match &state.search_query {
+                            Some(q) => format!("  [Search: {}]", q),
+                            None => String::new(),
+                        };
+                        let text = format!("  {}{}{}", state.current_path.display(), hidden, search_indicator);
+                        Self::draw_text_row(&self.text_cache,
+                            &mut engine, canvas, stride, &rect, PADDING, y,
+                            &text, 16.0, color_rgb(100, 180, 255), max_w, self.height,
+                        );
+                    }
+                    SEP_ROW | COL_SEP_ROW => {
+                        let text = "─".repeat(60);
+                        Self::draw_text_row(&self.text_cache,
+                            &mut engine, canvas, stride, &rect, PADDING, y,
+                            &text, 8.0, color_rgb(60, 60, 60), max_w, self.height,
+                        );
+                    }
+                    COL_HEADER_ROW => {
+                        let ind = state.sort_order.indicator();
+                        let ni = if state.sort_column == SortColumn::Name { ind } else { " " };
+                        let si = if state.sort_column == SortColumn::Size { ind } else { " " };
+                        let mi = if state.sort_column == SortColumn::Modified { ind } else { " " };
+                        let text = format!(
+                            "    Name {}{:<12} {:>8}{}  {}{}",
+                            ni, "", "Size", si, "Modified", mi
+                        );
+                        Self::draw_text_row(&self.text_cache,
+                            &mut engine, canvas, stride, &rect, PADDING, y,
+                            &text, 11.0, color_rgb(120, 120, 120), max_w, self.height,
+                        );
+                    }
+                    PARENT_ROW => {
+                        Self::draw_text_row(&self.text_cache,
+                            &mut engine, canvas, stride, &rect, PADDING, y,
+                            "📁  ../", 11.0, color_rgb(150, 150, 220), max_w, self.height,
+                        );
+                    }
+                    _ => {
+                        let virt_row = virt_idx - FIXED_ROWS;
+                        match state.view_mode {
+                            ViewMode::Detail => {
+                                let entry_idx = resolve_vis_idx(&state, virt_row);
+                                let Some(entry_idx) = entry_idx else { continue };
+                                let entry = &state.entries[entry_idx];
+                                let selected = state.is_selected(entry_idx);
+                                let color = entry_color(selected, entry.is_dir);
+                                let line = if selected {
+                                    format!("▶ {}", entry.display_line().trim_start())
+                                } else {
+                                    entry.display_line()
+                                };
+                                Self::draw_text_row(&self.text_cache,
+                                    &mut engine, canvas, stride, &rect, PADDING, y,
+                                    &line, 11.0, color, max_w, self.height,
+                                );
+                            }
+                            ViewMode::List => {
+                                let entry_idx = resolve_vis_idx(&state, virt_row);
                                 let Some(entry_idx) = entry_idx else { continue };
                                 let entry = &state.entries[entry_idx];
                                 let selected = state.is_selected(entry_idx);
                                 let color = entry_color(selected, entry.is_dir);
                                 let icon = if entry.is_dir { "📁 " } else { "   " };
-                                let name: String = entry.name.chars().take(14).collect();
+                                let name: String = entry.name.chars().take(40).collect();
                                 let line = if selected {
-                                    format!("▶{}{}", icon.trim_start(), name)
+                                    format!("▶ {}{}", icon.trim_start(), name)
                                 } else {
                                     format!("{}{}", icon, name)
                                 };
-                                let cx = PADDING + col as f32 * col_w;
                                 Self::draw_text_row(&self.text_cache,
-                                    &mut engine, canvas, stride, &rect, cx, y,
-                                    &line, 10.0, color, col_w, self.height,
+                                    &mut engine, canvas, stride, &rect, PADDING, y,
+                                    &line, 11.0, color, max_w, self.height,
                                 );
+                            }
+                            ViewMode::Compact => {
+                                let col_w = (self.width - PADDING * 2.0) / COMPACT_COLS as f32;
+                                for col in 0..COMPACT_COLS {
+                                    let vis_idx = virt_row * COMPACT_COLS + col;
+                                    let entry_idx = resolve_vis_idx(&state, vis_idx);
+                                    let Some(entry_idx) = entry_idx else { continue };
+                                    let entry = &state.entries[entry_idx];
+                                    let selected = state.is_selected(entry_idx);
+                                    let color = entry_color(selected, entry.is_dir);
+                                    let icon = if entry.is_dir { "📁 " } else { "   " };
+                                    let name: String = entry.name.chars().take(14).collect();
+                                    let line = if selected {
+                                        format!("▶{}{}", icon.trim_start(), name)
+                                    } else {
+                                        format!("{}{}", icon, name)
+                                    };
+                                    let cx = PADDING + col as f32 * col_w;
+                                    Self::draw_text_row(&self.text_cache,
+                                        &mut engine, canvas, stride, &rect, cx, y,
+                                        &line, 10.0, color, col_w, self.height,
+                                    );
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        // Overlay: rename text input on top of the target entry row
+        if let Some(ref rs) = self.rename_state {
+            let max_w = (self.width - PADDING * 2.0).max(0.0);
+            let virt = FIXED_ROWS + rs.entry_idx;
+            let ry = self.viewport.item_y_in_viewport(virt);
+            rs.paint(renderer, ItemRect::new(rect.x + PADDING, rect.y + ry, max_w, ROW_HEIGHT));
+        }
+        // Context menu overlay
+        crate::context_handler::paint_menu(&self.context_menu, &self.engine, &self.text_cache, renderer, rect);
     }
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
@@ -361,7 +371,16 @@ impl Widget for FileListWidget {
 // Event handling split out so dirty flag is set automatically.
 impl FileListWidget {
     fn handle_event_inner(&mut self, event: &WidgetEvent) -> EventResponse {
-        // Track modifier keys from key events (for non-pointer use)
+        // Context menu intercept — consumes all events while visible
+        if self.context_menu.is_visible() {
+            self.context_menu.event(event);
+            if let Some(id) = self.context_menu.take_selected() { crate::context_handler::dispatch(self, &id); }
+            return EventResponse::Handled;
+        }
+        // Rename mode: delegate events to rename UI
+        if self.rename_state.is_some() {
+            return crate::rename_ui::handle_rename_event(self, event);
+        }
         if let WidgetEvent::Key(ke) = event {
             self.ctrl_held = ke.modifiers.ctrl;
             self.shift_held = ke.modifiers.shift;
@@ -389,29 +408,11 @@ impl FileListWidget {
                         EventResponse::Handled
                     }
                     Some(YHit::Entry(idx)) => {
-                        let is_double = match (self.last_click_time, self.last_click_idx) {
-                            (Some(t), Some(prev)) => prev == idx && t.elapsed().as_millis() < 300,
-                            _ => false,
-                        };
-                        self.last_click_time = Some(Instant::now());
-                        self.last_click_idx = Some(idx);
-
                         let mut state = self.state.borrow_mut();
                         if idx >= state.entries.len() {
                             return EventResponse::Ignored;
                         }
-                        if is_double {
-                            if state.entries[idx].is_dir {
-                                let path = state.current_path.join(&state.entries[idx].name);
-                                state.navigate(path);
-                                drop(state);
-                                self.refresh_viewport();
-                            } else {
-                                let path = state.current_path.join(&state.entries[idx].name);
-                                drop(state);
-                                open_with_xdg(&path);
-                            }
-                        } else if self.ctrl_held {
+                        if self.ctrl_held {
                             state.toggle_select(idx);
                         } else if self.shift_held {
                             let anchor = state.anchor.unwrap_or(0);
@@ -425,25 +426,60 @@ impl FileListWidget {
                 }
             }
 
+            WidgetEvent::PointerPress { x, y, button: 0x111, .. } => {
+                crate::context_handler::show_at(self, *x, *y);
+                EventResponse::Handled
+            }
+
+            WidgetEvent::FileDrop { uris, .. } => {
+                crate::keybindings::handle_clipboard_paste(self, &uris.join("\n"));
+                EventResponse::Handled
+            }
+
+            WidgetEvent::DoubleClick { x, y, button: 0x110, .. } => {
+                match self.y_x_to_hit(*y, *x) {
+                    Some(YHit::Entry(idx)) => {
+                        let state = self.state.borrow();
+                        if idx >= state.entries.len() {
+                            return EventResponse::Ignored;
+                        }
+                        let path = state.current_path.join(&state.entries[idx].name);
+                        if state.entries[idx].is_dir {
+                            drop(state);
+                            self.state.borrow_mut().navigate(path);
+                            self.refresh_viewport();
+                        } else {
+                            drop(state);
+                            open_with_xdg(&path);
+                        }
+                        EventResponse::Handled
+                    }
+                    Some(YHit::Parent) => {
+                        self.state.borrow_mut().go_parent();
+                        self.refresh_viewport();
+                        EventResponse::Handled
+                    }
+                    _ => EventResponse::Ignored,
+                }
+            }
+
             WidgetEvent::Key(ke) if ke.state == KeyState::Pressed => {
                 crate::keybindings::handle_key_event(self, ke)
+            }
+
+            // System clipboard paste result (file URIs from Ctrl+V)
+            WidgetEvent::ImeCommit(text) if self.pending_file_paste => {
+                self.pending_file_paste = false;
+                crate::keybindings::handle_clipboard_paste(self, text);
+                EventResponse::Handled
             }
 
             _ => EventResponse::Ignored,
         }
     }
 
-    fn focusable(&self) -> bool {
-        true
-    }
-
-    fn dirty(&self) -> bool {
-        self.is_dirty || self.viewport.is_animating()
-    }
-
-    fn clear_dirty(&mut self) {
-        self.is_dirty = false;
-    }
+    pub(crate) fn dirty(&self) -> bool { self.is_dirty || self.viewport.is_animating() }
+    pub(crate) fn clear_dirty(&mut self) { self.is_dirty = false; }
 }
 
 fn resolve_vis_idx(state: &FileViewState, vis_idx: usize) -> Option<usize> {
@@ -454,17 +490,12 @@ fn resolve_vis_idx(state: &FileViewState, vis_idx: usize) -> Option<usize> {
     }
 }
 
-fn entry_color(selected: bool, is_dir: bool) -> Color {
-    if selected { color_rgb(80, 200, 255) }
-    else if is_dir { color_rgb(220, 180, 80) }
-    else { color_rgb(190, 190, 190) }
+fn entry_color(sel: bool, is_dir: bool) -> Color {
+    if sel { color_rgb(56, 164, 240) } else if is_dir { color_rgb(226, 200, 100) } else { color_rgb(170, 174, 182) }
 }
 
 pub(crate) fn open_with_xdg(path: &std::path::Path) {
-    let _ = std::process::Command::new("xdg-open")
-        .arg(path)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+    use std::process::{Command, Stdio};
+    let _ = Command::new("xdg-open").arg(path)
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
 }
