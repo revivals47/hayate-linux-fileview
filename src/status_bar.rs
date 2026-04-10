@@ -68,7 +68,7 @@ impl Widget for StatusBar {
         Size::new(constraints.max_width, BAR_HEIGHT)
     }
 
-    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         if let Some((canvas, stride)) = renderer.pixels_mut() {
             // Fill background
             let (bg_r, bg_g, bg_b) = BG_COLOR;

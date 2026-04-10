@@ -248,7 +248,7 @@ impl Widget for ThreePaneWidget {
         Size::new(total_width, constraints.max_height)
     }
 
-    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         let tab_h = if self.tab_bar.tab_count() > 1 { crate::tab_bar::TAB_HEIGHT } else { 0.0 };
         let full_content = rect.height - tab_h - BREADCRUMB_HEIGHT - STATUS_HEIGHT;
         let term_h = if self.terminal_visible { (full_content * 0.35).max(80.0).min(full_content - 100.0) } else { 0.0 };

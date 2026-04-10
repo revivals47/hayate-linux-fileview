@@ -71,7 +71,7 @@ impl RenameState {
     }
 
     /// Paint the text input overlay at the given rect.
-    pub(crate) fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    pub(crate) fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         self.widget.paint(renderer, rect);
     }
 }

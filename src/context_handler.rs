@@ -155,7 +155,7 @@ fn action_new_folder(w: &mut FileListWidget) {
 // ── Paint menu text labels ──
 
 pub(crate) fn paint_menu(
-    menu: &ContextMenu,
+    menu: &mut ContextMenu,
     engine: &RefCell<TextEngine>,
     text_cache: &RefCell<crate::lru_cache::LruCache<(String, u32), cosmic_text::Buffer>>,
     renderer: &mut Renderer,

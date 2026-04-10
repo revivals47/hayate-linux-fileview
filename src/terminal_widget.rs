@@ -102,7 +102,7 @@ impl Widget for TerminalWidget {
         Size::new(self.width, self.height)
     }
 
-    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         if let Some((canvas, stride)) = renderer.pixels_mut() {
             let (cols, rows) = self.state.grid_size();
             let (cursor_row, cursor_col) = self.state.cursor();

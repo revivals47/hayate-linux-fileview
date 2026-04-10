@@ -136,7 +136,7 @@ impl Widget for BreadcrumbWidget {
         Size::new(constraints.max_width, BAR_HEIGHT)
     }
 
-    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         if let Some((canvas, stride)) = renderer.pixels_mut() {
             let bg_rect = ItemRect::new(rect.x, rect.y, rect.width, BAR_HEIGHT);
             fill_bg(canvas, &bg_rect, stride, BG.0, BG.1, BG.2);
@@ -168,7 +168,7 @@ impl Widget for BreadcrumbWidget {
         }
 
         // Address bar edit mode — paint TextInputWidget via Renderer
-        if let Some(ref input) = self.editing {
+        if let Some(ref mut input) = self.editing {
             let input_rect = ItemRect::new(rect.x + PAD_X, rect.y, self.width - PAD_X * 2.0, BAR_HEIGHT);
             input.paint(renderer, input_rect);
         }

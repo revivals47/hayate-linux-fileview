@@ -125,7 +125,7 @@ impl TabBar {
     }
 
     /// Paint the tab bar.
-    pub(crate) fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    pub(crate) fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         if let Some((canvas, stride)) = renderer.pixels_mut() {
             // Background
             fill_rect_bgra(canvas, &rect, stride, BG);

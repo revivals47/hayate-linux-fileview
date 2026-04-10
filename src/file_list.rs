@@ -230,7 +230,7 @@ impl Widget for FileListWidget {
         Size::new(constraints.max_width, constraints.max_height)
     }
 
-    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         if let Some((canvas, stride)) = renderer.pixels_mut() {
             let state = self.state.borrow();
             let mut engine = self.engine.borrow_mut();
@@ -349,14 +349,14 @@ impl Widget for FileListWidget {
             }
         }
         // Overlay: rename text input on top of the target entry row
-        if let Some(ref rs) = self.rename_state {
+        if let Some(ref mut rs) = self.rename_state {
             let max_w = (self.width - PADDING * 2.0).max(0.0);
             let virt = FIXED_ROWS + rs.entry_idx;
             let ry = self.viewport.item_y_in_viewport(virt);
             rs.paint(renderer, ItemRect::new(rect.x + PADDING, rect.y + ry, max_w, ROW_HEIGHT));
         }
         // Context menu overlay
-        crate::context_handler::paint_menu(&self.context_menu, &self.engine, &self.text_cache, renderer, rect);
+        crate::context_handler::paint_menu(&mut self.context_menu, &self.engine, &self.text_cache, renderer, rect);
     }
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {

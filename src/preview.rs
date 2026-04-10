@@ -242,7 +242,7 @@ impl Widget for PreviewPane {
         Size::new(self.width, self.height)
     }
 
-    fn paint(&self, renderer: &mut Renderer, rect: ItemRect) {
+    fn paint(&mut self, renderer: &mut Renderer, rect: ItemRect) {
         if let Some((canvas, stride)) = renderer.pixels_mut() {
             // Fill background with dark color (R=30, G=30, B=35) in BGRA byte order
             let x0 = rect.x.max(0.0) as u32;
