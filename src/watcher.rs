@@ -72,8 +72,8 @@ impl Drop for FsWatcher {
 
 // ── inotify background thread ──────────────────────────────────────
 
-const WATCH_MASK: u32 = (libc::IN_CREATE | libc::IN_DELETE | libc::IN_MODIFY
-    | libc::IN_MOVED_FROM | libc::IN_MOVED_TO) as u32;
+const WATCH_MASK: u32 = libc::IN_CREATE | libc::IN_DELETE | libc::IN_MODIFY
+    | libc::IN_MOVED_FROM | libc::IN_MOVED_TO;
 
 fn spawn_watcher(
     path: PathBuf,

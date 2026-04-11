@@ -122,6 +122,7 @@ impl BreadcrumbWidget {
         self.editing = None;
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw(engine: &mut TextEngine, canvas: &mut [u8], stride: u32, rect: &ItemRect,
             x: f32, text: &str, color: Color, w: f32) {
         let p = TextParams { text, font_size: FONT_SIZE, line_height: BAR_HEIGHT, color, family: FontFamily::Monospace };
@@ -178,8 +179,8 @@ impl Widget for BreadcrumbWidget {
         // Address bar edit mode — route events to TextInputWidget
         if self.editing.is_some() {
             // Intercept Escape and Enter before forwarding
-            if let WidgetEvent::Key(ke) = event {
-                if ke.state == KeyState::Pressed {
+            if let WidgetEvent::Key(ke) = event
+                && ke.state == KeyState::Pressed {
                     if ke.keysym == xkbcommon::xkb::Keysym::Escape {
                         self.cancel_editing();
                         return EventResponse::Handled;
@@ -191,7 +192,6 @@ impl Widget for BreadcrumbWidget {
                         return EventResponse::Handled;
                     }
                 }
-            }
             if let Some(ref mut input) = self.editing {
                 input.event(event);
             }

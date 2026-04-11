@@ -233,12 +233,11 @@ impl Widget for SidebarWidget {
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {
         match event {
             WidgetEvent::PointerPress { y, button: 0x110, .. } => {
-                if let Some(path) = self.y_to_path(*y) {
-                    if path.is_dir() {
+                if let Some(path) = self.y_to_path(*y)
+                    && path.is_dir() {
                         self.state.borrow_mut().navigate(path);
                         return EventResponse::Handled;
                     }
-                }
                 EventResponse::Ignored
             }
             _ => EventResponse::Ignored,

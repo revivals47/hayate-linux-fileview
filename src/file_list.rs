@@ -177,6 +177,7 @@ impl FileListWidget {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_text_row(
         cache: &RefCell<crate::lru_cache::LruCache<(String, u32), cosmic_text::Buffer>>,
         engine: &mut TextEngine,

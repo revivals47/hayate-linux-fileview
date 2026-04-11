@@ -109,10 +109,10 @@ impl TabBar {
         true
     }
 
-    pub(crate) fn update_active_label(&mut self, path: &PathBuf) {
+    pub(crate) fn update_active_label(&mut self, path: &std::path::Path) {
         if let Some(tab) = self.tabs.get_mut(self.active) {
             tab.label = dir_label(path);
-            tab.snapshot.path = path.clone();
+            tab.snapshot.path = path.to_path_buf();
         }
     }
 
@@ -261,7 +261,7 @@ pub(crate) fn paint_hline(renderer: &mut Renderer, x: f32, y: f32, w: f32) {
     }
 }
 
-fn dir_label(path: &PathBuf) -> String {
+fn dir_label(path: &std::path::Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "/".to_string())

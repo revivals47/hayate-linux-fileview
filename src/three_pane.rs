@@ -340,15 +340,14 @@ impl Widget for ThreePaneWidget {
         }
 
         // Divider drag: PointerRelease ends drag → persist ratios to state
-        if let WidgetEvent::PointerRelease { .. } = event {
-            if self.dragging.take().is_some() {
+        if let WidgetEvent::PointerRelease { .. } = event
+            && self.dragging.take().is_some() {
                 self.set_cursor(hayate_ui::platform::CursorShape::Default);
                 let state = self.file_list.state().borrow();
                 state.sidebar_ratio.set(self.sidebar_ratio);
                 state.preview_ratio.set(self.preview_ratio);
                 return EventResponse::Handled;
             }
-        }
 
         // PointerLeave → restore default cursor
         if matches!(event, WidgetEvent::PointerLeave) {
@@ -365,14 +364,13 @@ impl Widget for ThreePaneWidget {
             }
             let adj_y = *y - tab_h;
             // Divider hit → start drag
-            if *button == 0x110 {
-                if let Some(target) = self.hit_divider(*x, adj_y) {
+            if *button == 0x110
+                && let Some(target) = self.hit_divider(*x, adj_y) {
                     let ow = match target { DragTarget::SidebarRight => self.sidebar_width, DragTarget::PreviewLeft => self.preview_width };
                     self.dragging = Some(DragState { target, start_x: *x, original_width: ow });
                     self.set_cursor(hayate_ui::platform::CursorShape::ColResize);
                     return EventResponse::Handled;
                 }
-            }
             // Breadcrumb bar
             if adj_y < BREADCRUMB_HEIGHT {
                 let r = self.breadcrumb.event(event);

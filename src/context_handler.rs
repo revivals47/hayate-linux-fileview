@@ -53,8 +53,8 @@ pub(crate) fn dispatch(w: &mut FileListWidget, action_id: &str) {
 
 fn action_open(w: &mut FileListWidget) {
     let state = w.state.borrow();
-    if let Some(idx) = state.cursor {
-        if idx < state.entries.len() {
+    if let Some(idx) = state.cursor
+        && idx < state.entries.len() {
             let path = state.current_path.join(&state.entries[idx].name);
             if state.entries[idx].is_dir {
                 drop(state);
@@ -65,7 +65,6 @@ fn action_open(w: &mut FileListWidget) {
                 crate::file_list::open_with_xdg(&path);
             }
         }
-    }
 }
 
 fn action_copy(w: &mut FileListWidget) {
@@ -127,13 +126,12 @@ fn action_delete(w: &mut FileListWidget) {
 
 fn action_rename(w: &mut FileListWidget) {
     let state = w.state.borrow();
-    if let Some(idx) = state.cursor {
-        if idx < state.entries.len() {
+    if let Some(idx) = state.cursor
+        && idx < state.entries.len() {
             let name = state.entries[idx].name.clone();
             drop(state);
             crate::rename_ui::start_rename(w, idx, &name);
         }
-    }
 }
 
 fn action_new_folder(w: &mut FileListWidget) {

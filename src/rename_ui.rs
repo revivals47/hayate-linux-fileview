@@ -50,23 +50,20 @@ impl RenameState {
     /// was submitted, or was cancelled.
     pub(crate) fn handle_event(&mut self, event: &WidgetEvent) -> RenameEvent {
         // Intercept Escape before forwarding to the widget
-        if let WidgetEvent::Key(ke) = event {
-            if ke.keysym == xkbcommon::xkb::Keysym::Escape {
+        if let WidgetEvent::Key(ke) = event
+            && ke.keysym == xkbcommon::xkb::Keysym::Escape {
                 return RenameEvent::Cancel;
             }
-        }
         let resp = self.widget.event(event);
         // Check if TextInputWidget signalled Submit (Enter)
-        if resp == EventResponse::Handled {
-            if let WidgetEvent::Key(ke) = event {
-                if ke.keysym == xkbcommon::xkb::Keysym::Return
-                    || ke.keysym == xkbcommon::xkb::Keysym::KP_Enter
+        if resp == EventResponse::Handled
+            && let WidgetEvent::Key(ke) = event
+                && (ke.keysym == xkbcommon::xkb::Keysym::Return
+                    || ke.keysym == xkbcommon::xkb::Keysym::KP_Enter)
                 {
                     let new_name = self.widget.text().to_owned();
                     return RenameEvent::Submit(new_name);
                 }
-            }
-        }
         RenameEvent::Editing
     }
 

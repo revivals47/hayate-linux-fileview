@@ -65,13 +65,12 @@ impl TerminalWidget {
 
     /// Poll PTY for new output and feed into the ANSI parser.
     pub(crate) fn poll(&mut self) {
-        if let Some(ref pty) = self.pty {
-            if pty.has_output() {
+        if let Some(ref pty) = self.pty
+            && pty.has_output() {
                 let data = pty.take_output();
                 self.state.feed(&data);
                 self.is_dirty = true;
             }
-        }
     }
 
     /// Send a `cd` command to the shell.
@@ -238,6 +237,7 @@ fn measure_cell(engine: &Rc<RefCell<TextEngine>>) -> (f32, f32) {
 }
 
 /// Paint a cell background rectangle.
+#[allow(clippy::too_many_arguments)]
 fn paint_cell_bg(
     canvas: &mut [u8], stride: u32, canvas_h: u32,
     x: f32, y: f32, w: f32, h: f32,
@@ -285,16 +285,14 @@ fn key_to_bytes(ke: &KeyEvent) -> Option<Vec<u8>> {
         _ => {}
     }
     // Ctrl+letter → control character 0x01..0x1a
-    if ke.modifiers.ctrl {
-        if let Some(ref s) = ke.utf8 {
-            if let Some(c) = s.chars().next() {
+    if ke.modifiers.ctrl
+        && let Some(ref s) = ke.utf8
+            && let Some(c) = s.chars().next() {
                 let lower = c.to_ascii_lowercase();
                 if lower.is_ascii_lowercase() {
                     return Some(vec![lower as u8 - b'a' + 1]);
                 }
             }
-        }
-    }
     // Regular printable character
     ke.utf8.as_ref().map(|s| s.as_bytes().to_vec())
 }

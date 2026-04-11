@@ -182,12 +182,7 @@ impl TerminalState {
     }
 
     fn sgr(&mut self, params: &vte::Params) {
-        let mut iter = params.iter();
-        loop {
-            let sub = match iter.next() {
-                Some(s) => s,
-                None => break,
-            };
+        for sub in params.iter() {
             let n = sub[0];
             match n {
                 0 => {
@@ -226,7 +221,7 @@ impl vte::Perform for TerminalState {
                 let next = (self.cursor_col / 8 + 1) * 8;
                 self.cursor_col = next.min(self.cols.saturating_sub(1));
             }
-            0x0A | 0x0B | 0x0C => { // LF / VT / FF
+            0x0A..=0x0C => { // LF / VT / FF
                 self.linefeed();
             }
             0x0D => { // CR

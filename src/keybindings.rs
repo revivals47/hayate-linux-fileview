@@ -47,9 +47,8 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
                         if let Some(ref mut q) = st.search_query { q.push(ch); }
                     }
                     st.update_filter();
-                    if let Some(ref fi) = st.filtered_indices {
-                        if let Some(&first) = fi.first() { st.select_single(first); }
-                    }
+                    if let Some(ref fi) = st.filtered_indices
+                        && let Some(&first) = fi.first() { st.select_single(first); }
                     drop(st);
                     w.refresh_viewport();
                     w.ensure_cursor_visible();
@@ -124,8 +123,8 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
     }
     if ke.keysym == Keysym::Return {
         let state = w.state.borrow();
-        if let Some(idx) = state.cursor {
-            if idx < state.entries.len() {
+        if let Some(idx) = state.cursor
+            && idx < state.entries.len() {
                 let path = state.current_path.join(&state.entries[idx].name);
                 if state.entries[idx].is_dir {
                     drop(state);
@@ -137,7 +136,6 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
                 }
                 return EventResponse::Handled;
             }
-        }
         return EventResponse::Ignored;
     }
     if ke.modifiers.ctrl {
@@ -235,13 +233,12 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
     if ke.keysym == Keysym::F2 && debounce_ok {
         w.last_file_op = Some(now);
         let state = w.state.borrow();
-        if let Some(idx) = state.cursor {
-            if idx < state.entries.len() {
+        if let Some(idx) = state.cursor
+            && idx < state.entries.len() {
                 let name = state.entries[idx].name.clone();
                 drop(state);
                 crate::rename_ui::start_rename(w, idx, &name);
             }
-        }
         return EventResponse::Handled;
     }
     // Ctrl+Shift+N → create new folder
@@ -278,16 +275,15 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
         return EventResponse::Handled;
     }
     // Incremental jump
-    if !ke.modifiers.ctrl && !ke.modifiers.alt {
-        if let Some(ref text) = ke.utf8 {
+    if !ke.modifiers.ctrl && !ke.modifiers.alt
+        && let Some(ref text) = ke.utf8 {
             for ch in text.chars() {
                 if ch.is_alphanumeric() || ch == '.' || ch == '_' || ch == '-' {
                     let now = Instant::now();
-                    if let Some(last) = w.jump_last_input {
-                        if now.duration_since(last).as_millis() > JUMP_TIMEOUT_MS {
+                    if let Some(last) = w.jump_last_input
+                        && now.duration_since(last).as_millis() > JUMP_TIMEOUT_MS {
                             w.jump_buffer.clear();
                         }
-                    }
                     w.jump_buffer.push(ch);
                     w.jump_last_input = Some(now);
                     w.jump_to_prefix();
@@ -295,7 +291,6 @@ pub(crate) fn handle_key_event(w: &mut FileListWidget, ke: &KeyEvent) -> EventRe
                 }
             }
         }
-    }
     EventResponse::Ignored
 }
 
