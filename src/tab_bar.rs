@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
+use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
 use hayate_ui::scroll::delegate::ItemRect;
 use tiny_skia::Color;
 
@@ -145,7 +145,7 @@ impl TabBar {
                 let max_label_w = tw - TAB_PAD * 2.0 - CLOSE_W;
                 let buf = engine.layout(&TextParams {
                     text: &tab.label, font_size: 11.0, line_height: TAB_HEIGHT,
-                    color, family: FontFamily::SansSerif,
+                    color, family: FontFamily::SansSerif, axes: VariableFontAxes::default(),
                 }, max_label_w);
                 let lx = (tx + TAB_PAD) as i32;
                 let ly = rect.y as i32 + 2;
@@ -157,7 +157,7 @@ impl TabBar {
                     let cx = tx + tw - CLOSE_W - 2.0;
                     let cbuf = engine.layout(&TextParams {
                         text: "×", font_size: 12.0, line_height: TAB_HEIGHT,
-                        color: text_color(), family: FontFamily::SansSerif,
+                        color: text_color(), family: FontFamily::SansSerif, axes: VariableFontAxes::default(),
                     }, CLOSE_W);
                     engine.draw_buffer(&cbuf, canvas, stride, cx as i32, ly, text_color(), buf_w, buf_h);
                 }

@@ -8,7 +8,7 @@ use std::time::Instant;
 use tiny_skia::Color;
 
 use hayate_ui::platform::keyboard::KeyState;
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
+use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::scroll::physics::PixelScrollPhysics;
 use hayate_ui::scroll::viewport::VirtualViewport;
@@ -201,6 +201,7 @@ impl FileListWidget {
                 line_height: ROW_HEIGHT,
                 color,
                 family: FontFamily::Monospace,
+                axes: VariableFontAxes::default(),
             };
             engine.layout(&params, max_w)
         });
@@ -357,7 +358,7 @@ impl Widget for FileListWidget {
             rs.paint(renderer, ItemRect::new(rect.x + PADDING, rect.y + ry, max_w, ROW_HEIGHT));
         }
         // Context menu overlay
-        crate::context_handler::paint_menu(&mut self.context_menu, &self.engine, &self.text_cache, renderer, rect);
+        crate::context_handler::paint_menu(&mut self.context_menu, &self.engine, renderer, rect);
     }
 
     fn event(&mut self, event: &WidgetEvent) -> EventResponse {

@@ -12,7 +12,7 @@ use std::rc::Rc;
 use xkbcommon::xkb::Keysym;
 
 use hayate_ui::platform::keyboard::{KeyEvent, KeyState};
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
+use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
@@ -158,7 +158,7 @@ impl Widget for TerminalWidget {
                 let params = TextParams {
                     text: &trimmed, font_size: FONT_SIZE,
                     line_height: self.cell_height, color,
-                    family: FontFamily::Monospace,
+                    family: FontFamily::Monospace, axes: VariableFontAxes::default(),
                 };
                 let buf = engine.layout(&params, self.width);
                 let draw_x = rect.x + first_non_space as f32 * self.cell_width;
@@ -175,7 +175,7 @@ impl Widget for TerminalWidget {
                         let p = TextParams {
                             text: &s, font_size: FONT_SIZE,
                             line_height: self.cell_height, color: inv_color,
-                            family: FontFamily::Monospace,
+                            family: FontFamily::Monospace, axes: VariableFontAxes::default(),
                         };
                         let b = engine.layout(&p, self.cell_width * 2.0);
                         let cx = rect.x + cursor_col as f32 * self.cell_width;
@@ -224,7 +224,7 @@ fn measure_cell(engine: &Rc<RefCell<TextEngine>>) -> (f32, f32) {
     let mut eng = engine.borrow_mut();
     let params = TextParams {
         text: "M", font_size: FONT_SIZE, line_height: FONT_SIZE * 1.3,
-        color: tiny_skia::Color::WHITE, family: FontFamily::Monospace,
+        color: tiny_skia::Color::WHITE, family: FontFamily::Monospace, axes: VariableFontAxes::default(),
     };
     let buf = eng.layout(&params, 100.0);
     let mut w = FONT_SIZE * 0.6; // fallback

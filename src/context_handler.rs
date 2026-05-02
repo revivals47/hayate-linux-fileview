@@ -2,8 +2,9 @@
 
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
+use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::context_menu::{ContextMenu, MenuItem};
 use hayate_ui::widget::core::Widget;
@@ -154,33 +155,11 @@ fn action_new_folder(w: &mut FileListWidget) {
 
 pub(crate) fn paint_menu(
     menu: &mut ContextMenu,
-    engine: &RefCell<TextEngine>,
-    text_cache: &RefCell<crate::lru_cache::LruCache<(String, u32), cosmic_text::Buffer>>,
+    engine: &Rc<RefCell<TextEngine>>,
     renderer: &mut Renderer,
     rect: ItemRect,
 ) {
     if !menu.is_visible() { return; }
-    // Draw background, border, hover highlight
+    menu.inject_engine(engine.clone());
     menu.paint(renderer, rect);
-    // Draw text labels
-    if let Some((canvas, stride)) = renderer.pixels_mut() {
-        let mut eng = engine.borrow_mut();
-        let mut cache = text_cache.borrow_mut();
-        for (label, lx, ly) in menu.label_positions() {
-            let key = (label.to_string(), 12.0_f32.to_bits());
-            let buf = cache.get_or_insert_with(key, || {
-                eng.layout(&TextParams {
-                    text: label, font_size: 12.0, line_height: 20.0,
-                    color: tiny_skia::Color::from_rgba8(220, 220, 220, 255),
-                    family: FontFamily::Monospace,
-                }, 160.0)
-            });
-            eng.draw_buffer(
-                buf, canvas, stride,
-                (rect.x + lx) as i32, (rect.y + ly) as i32,
-                tiny_skia::Color::from_rgba8(220, 220, 220, 255),
-                160, 20,
-            );
-        }
-    }
 }

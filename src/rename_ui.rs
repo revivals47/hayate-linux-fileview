@@ -36,7 +36,7 @@ impl RenameState {
         engine: Rc<RefCell<TextEngine>>,
         width: f32,
     ) -> Self {
-        let mut widget = TextInputWidget::new(engine).with_width(width);
+        let mut widget = TextInputWidget::new_with_engine(engine).with_width(width);
         // Pre-fill with the current name, select all for easy replacement
         widget.input_mut().insert_str(original_name);
         widget.input_mut().select_all();

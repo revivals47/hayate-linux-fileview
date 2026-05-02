@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use tiny_skia::Color;
 use hayate_ui::platform::keyboard::KeyState;
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams};
+use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 
@@ -92,7 +92,7 @@ impl BreadcrumbWidget {
     pub(crate) fn start_editing(&mut self) {
         use hayate_ui::widget::TextInputWidget;
         let path_str = self.state.borrow().current_path.display().to_string();
-        let mut input = TextInputWidget::new(self.engine.clone()).with_width(self.width);
+        let mut input = TextInputWidget::new_with_engine(self.engine.clone()).with_width(self.width);
         input.input_mut().insert_str(&path_str);
         input.input_mut().select_all();
         input.input_mut().set_focused(true);
@@ -125,7 +125,7 @@ impl BreadcrumbWidget {
     #[allow(clippy::too_many_arguments)]
     fn draw(engine: &mut TextEngine, canvas: &mut [u8], stride: u32, rect: &ItemRect,
             x: f32, text: &str, color: Color, w: f32) {
-        let p = TextParams { text, font_size: FONT_SIZE, line_height: BAR_HEIGHT, color, family: FontFamily::Monospace };
+        let p = TextParams { text, font_size: FONT_SIZE, line_height: BAR_HEIGHT, color, family: FontFamily::Monospace, axes: VariableFontAxes::default() };
         let buf = engine.layout(&p, w);
         engine.draw_buffer(&buf, canvas, stride, (rect.x+x) as i32, (rect.y+PAD_Y) as i32, color, w as u32, BAR_HEIGHT as u32);
     }
