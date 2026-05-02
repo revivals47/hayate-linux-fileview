@@ -31,6 +31,8 @@ pub(crate) struct SidebarWidget {
     mounts: Vec<SidebarEntry>,
     width: f32,
     height: f32,
+    /// Cached widget list — rebuilt only when bookmarks/mounts change.
+    cached_widgets: Vec<Box<dyn Widget>>,
 }
 
 fn home_dir() -> PathBuf {
@@ -97,14 +99,17 @@ impl SidebarWidget {
     ) -> Self {
         let bookmarks = default_bookmarks();
         let mounts = read_mounts();
-        Self {
+        let mut s = Self {
             state,
             engine,
             bookmarks,
             mounts,
             width: SIDEBAR_WIDTH,
             height: 400.0,
-        }
+            cached_widgets: Vec::new(),
+        };
+        s.cached_widgets = s.build_widgets();
+        s
     }
 
     /// Map click Y to (section, index within section).
@@ -210,11 +215,10 @@ impl Widget for SidebarWidget {
             }
         }
 
-        // Paint text rows (layout each widget before painting)
-        let mut widgets = self.build_widgets();
+        // Paint text rows (use cached widgets to avoid per-frame allocation)
         let row_width = self.width - PADDING * 2.0;
         let row_constraints = Constraints::tight(row_width, ROW_HEIGHT);
-        for (i, w) in widgets.iter_mut().enumerate() {
+        for (i, w) in self.cached_widgets.iter_mut().enumerate() {
             let row_y = rect.y + PADDING + i as f32 * ROW_HEIGHT;
             if row_y + ROW_HEIGHT > rect.y + rect.height {
                 break;

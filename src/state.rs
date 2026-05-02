@@ -9,6 +9,9 @@ use hayate_ui::render::TextEngine;
 
 use crate::entry::{DirEntry, SortColumn, SortOrder, read_dir_sorted};
 
+/// Maximum navigation history entries (back/forward stacks).
+const MAX_NAV_HISTORY: usize = 50;
+
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ViewMode { Detail, List, Compact }
 
@@ -26,8 +29,8 @@ pub(crate) struct FileViewState {
     pub(crate) search_query: Option<String>,
     pub(crate) filtered_indices: Option<Vec<usize>>,
     pub(crate) last_error: Option<String>,
-    pub(crate) back_stack: Vec<PathBuf>,
-    pub(crate) forward_stack: Vec<PathBuf>,
+    pub(crate) back_stack: Vec<PathBuf>,    // capped at MAX_NAV_HISTORY
+    pub(crate) forward_stack: Vec<PathBuf>, // capped at MAX_NAV_HISTORY
     pub(crate) quit_flag: Option<Rc<Cell<bool>>>,
     pub(crate) title_buffer: Option<Rc<RefCell<Option<String>>>>,
     pub(crate) system_clipboard: Option<Rc<RefCell<Option<String>>>>,
@@ -160,6 +163,10 @@ impl FileViewState {
             return;
         }
         self.back_stack.push(self.current_path.clone());
+        // Cap navigation history to prevent unbounded memory growth
+        if self.back_stack.len() > MAX_NAV_HISTORY {
+            self.back_stack.drain(..self.back_stack.len() - MAX_NAV_HISTORY);
+        }
         self.forward_stack.clear();
         self.current_path = path;
         self.refresh();
