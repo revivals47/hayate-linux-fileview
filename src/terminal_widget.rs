@@ -15,6 +15,7 @@ use hayate_ui::platform::keyboard::{KeyEvent, KeyState};
 use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::terminal_pty::Pty;
 use crate::terminal_state::{Color16, TerminalState};
@@ -25,6 +26,8 @@ const DEFAULT_ROWS: usize = 24;
 
 /// Terminal emulator widget — PTY + ANSI grid + rendering.
 pub(crate) struct TerminalWidget {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     pty: Option<Pty>,
     state: TerminalState,
     engine: Rc<RefCell<TextEngine>>,
@@ -39,6 +42,7 @@ impl TerminalWidget {
     pub(crate) fn new(engine: Rc<RefCell<TextEngine>>) -> Self {
         let (cw, ch) = measure_cell(&engine);
         Self {
+            id: alloc_widget_id(),
             pty: None,
             state: TerminalState::new(DEFAULT_COLS, DEFAULT_ROWS),
             engine,
@@ -82,6 +86,10 @@ impl TerminalWidget {
 }
 
 impl Widget for TerminalWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         self.width = constraints.max_width;
         self.height = constraints.max_height;

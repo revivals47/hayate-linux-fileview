@@ -5,6 +5,7 @@ use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 use hayate_ui::widget::text_widget::RichTextWidget;
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::entry::format_size;
 use crate::state::FileViewState;
@@ -28,6 +29,8 @@ struct ImagePreview {
 }
 
 pub struct PreviewPane {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     state: Rc<RefCell<FileViewState>>,
     title_widget: RichTextWidget,
     content_widget: RichTextWidget,
@@ -51,6 +54,7 @@ impl PreviewPane {
             .with_engine(engine.clone())
             .with_color(120, 120, 120);
         Self {
+            id: alloc_widget_id(),
             state,
             title_widget,
             content_widget,
@@ -224,6 +228,10 @@ fn decode_image_explicit(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 }
 
 impl Widget for PreviewPane {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         self.width = constraints.max_width;
         self.height = constraints.max_height;
