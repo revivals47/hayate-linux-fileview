@@ -6,6 +6,7 @@ use std::rc::Rc;
 use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::entry::format_size;
 
@@ -25,6 +26,8 @@ pub struct StatusInfo<'a> {
 }
 
 pub struct StatusBar {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     message: String,
     is_error: bool,
     engine: Rc<RefCell<TextEngine>>,
@@ -33,6 +36,7 @@ pub struct StatusBar {
 impl StatusBar {
     pub fn new(engine: Rc<RefCell<TextEngine>>) -> Self {
         Self {
+            id: alloc_widget_id(),
             message: String::new(),
             is_error: false,
             engine,
@@ -64,6 +68,10 @@ impl StatusBar {
 }
 
 impl Widget for StatusBar {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         Size::new(constraints.max_width, BAR_HEIGHT)
     }

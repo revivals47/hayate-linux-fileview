@@ -7,6 +7,7 @@ use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 use hayate_ui::widget::toast::ToastWidget;
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::breadcrumb::BreadcrumbWidget;
 use crate::file_list::FileListWidget;
@@ -38,6 +39,8 @@ struct DragState {
 }
 
 pub(crate) struct ThreePaneWidget {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     breadcrumb: BreadcrumbWidget,
     sidebar: SidebarWidget,
     file_list: FileListWidget,
@@ -94,6 +97,7 @@ impl ThreePaneWidget {
         let tab_bar = crate::tab_bar::TabBar::new(initial_path, engine.clone());
         let terminal = TerminalWidget::new(engine);
         Self {
+            id: alloc_widget_id(),
             breadcrumb, sidebar, file_list, preview, status_bar,
             sidebar_width: 0.0, list_width: 0.0, preview_width: 0.0,
             total_width: 0.0, last_pointer_x: 0.0, dragging: None,
@@ -189,6 +193,10 @@ impl ThreePaneWidget {
 }
 
 impl Widget for ThreePaneWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         // Poll filesystem watcher for external changes
         {

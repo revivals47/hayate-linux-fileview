@@ -8,6 +8,7 @@ use hayate_ui::render::{Renderer, TextEngine};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
 use hayate_ui::widget::text_widget::RichTextWidget;
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::state::FileViewState;
 
@@ -25,6 +26,8 @@ struct SidebarEntry {
 }
 
 pub(crate) struct SidebarWidget {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     state: Rc<RefCell<FileViewState>>,
     engine: Rc<RefCell<TextEngine>>,
     bookmarks: Vec<SidebarEntry>,
@@ -100,6 +103,7 @@ impl SidebarWidget {
         let bookmarks = default_bookmarks();
         let mounts = read_mounts();
         let mut s = Self {
+            id: alloc_widget_id(),
             state,
             engine,
             bookmarks,
@@ -188,6 +192,10 @@ impl SidebarWidget {
 }
 
 impl Widget for SidebarWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         self.width = SIDEBAR_WIDTH.min(constraints.max_width);
         self.height = constraints.max_height;

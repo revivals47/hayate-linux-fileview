@@ -13,6 +13,7 @@ use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::scroll::physics::PixelScrollPhysics;
 use hayate_ui::scroll::viewport::VirtualViewport;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::entry::SortColumn;
 use crate::state::{FileViewState, ViewMode};
@@ -39,6 +40,8 @@ fn color_rgb(r: u8, g: u8, b: u8) -> Color {
 // ── FileListWidget ──
 
 pub(crate) struct FileListWidget {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     pub(crate) state: Rc<RefCell<FileViewState>>,
     pub(crate) viewport: VirtualViewport,
     engine: Rc<RefCell<TextEngine>>,
@@ -71,6 +74,7 @@ impl FileListWidget {
         let mut viewport = VirtualViewport::new(700.0, ROW_HEIGHT, physics);
         viewport.on_total_changed(FIXED_ROWS + entry_count);
         Self {
+            id: alloc_widget_id(),
             state,
             viewport,
             engine,
@@ -225,6 +229,10 @@ pub(crate) enum YHit {
 }
 
 impl Widget for FileListWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         self.width = constraints.max_width;
         self.height = constraints.max_height;

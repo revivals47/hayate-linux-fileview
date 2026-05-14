@@ -9,6 +9,7 @@ use hayate_ui::platform::keyboard::KeyState;
 use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
 use hayate_ui::scroll::delegate::ItemRect;
 use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_ui::widget::{alloc_widget_id, WidgetId};
 
 use crate::state::FileViewState;
 
@@ -24,6 +25,8 @@ const NAV_BTN_W: f32 = CHAR_W * 2.0; // width of ◀ or ▶ button
 struct Seg { label: String, path: PathBuf, x0: f32, x1: f32 }
 
 pub(crate) struct BreadcrumbWidget {
+    /// Stable widget identity (Phase 5: `Widget::id` is required).
+    id: WidgetId,
     state: Rc<RefCell<FileViewState>>,
     engine: Rc<RefCell<TextEngine>>,
     segs: Vec<Seg>,
@@ -51,6 +54,7 @@ fn fill_bg(canvas: &mut [u8], rect: &ItemRect, stride: u32, r: u8, g: u8, b: u8)
 impl BreadcrumbWidget {
     pub(crate) fn new(state: Rc<RefCell<FileViewState>>, engine: Rc<RefCell<TextEngine>>) -> Self {
         let mut w = Self {
+            id: alloc_widget_id(),
             state, engine, segs: Vec::new(), width: 0.0,
             back_x0: 0.0, back_x1: 0.0, fwd_x0: 0.0, fwd_x1: 0.0,
             editing: None,
@@ -132,6 +136,10 @@ impl BreadcrumbWidget {
 }
 
 impl Widget for BreadcrumbWidget {
+    fn id(&self) -> WidgetId {
+        self.id
+    }
+
     fn layout(&mut self, constraints: &Constraints) -> Size {
         self.width = constraints.max_width;
         Size::new(constraints.max_width, BAR_HEIGHT)
