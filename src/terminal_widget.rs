@@ -11,11 +11,12 @@ use std::rc::Rc;
 
 use xkbcommon::xkb::Keysym;
 
-use hayate_ui::platform::keyboard::{KeyEvent, KeyState};
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
-use hayate_ui::widget::{alloc_widget_id, WidgetId};
+use hayate_platform::platform::keyboard::{KeyEvent, KeyState};
+use hayate_platform::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_platform::widget::widget_id::alloc_widget_id;
+use hayate_platform::widget::focus::WidgetId;
 
 use crate::terminal_pty::Pty;
 use crate::terminal_state::{Color16, TerminalState};
@@ -329,7 +330,7 @@ mod tests {
 
     #[test]
     fn key_to_bytes_ctrl_c() {
-        let mut mods = hayate_ui::platform::keyboard::Modifiers::default();
+        let mut mods = hayate_platform::platform::keyboard::Modifiers::default();
         mods.ctrl = true;
         let ke = KeyEvent {
             key: 0, keysym: Keysym::c,

@@ -5,9 +5,9 @@ use std::time::Instant;
 
 use xkbcommon::xkb::Keysym;
 
-use hayate_ui::widget::core::EventResponse;
-use hayate_ui::widget::toast::ToastLevel;
-use hayate_ui::platform::keyboard::KeyEvent;
+use hayate_platform::widget::core::EventResponse;
+use hayate_kit::widget::toast::ToastLevel;
+use hayate_platform::platform::keyboard::KeyEvent;
 
 use crate::entry::SortColumn;
 use crate::file_list::{FileListWidget, JUMP_TIMEOUT_MS};

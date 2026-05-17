@@ -4,12 +4,12 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::{Renderer, TextEngine};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::context_menu::{ContextMenu, MenuItem};
-use hayate_ui::widget::core::Widget;
+use hayate_platform::render::{Renderer, TextEngine};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_kit::widget::context_menu::{ContextMenu, MenuItem};
+use hayate_platform::widget::core::Widget;
 
-use hayate_ui::widget::toast::ToastLevel;
+use hayate_kit::widget::toast::ToastLevel;
 use crate::file_list::FileListWidget;
 
 // ── Menu construction ──

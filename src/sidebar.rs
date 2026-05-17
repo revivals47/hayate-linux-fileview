@@ -4,11 +4,12 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::{Renderer, TextEngine};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
-use hayate_ui::widget::text_widget::RichTextWidget;
-use hayate_ui::widget::{alloc_widget_id, WidgetId};
+use hayate_platform::render::{Renderer, TextEngine};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_kit::widget::text_widget::RichTextWidget;
+use hayate_platform::widget::widget_id::alloc_widget_id;
+use hayate_platform::widget::focus::WidgetId;
 
 use crate::state::FileViewState;
 

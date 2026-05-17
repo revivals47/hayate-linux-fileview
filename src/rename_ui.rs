@@ -4,11 +4,11 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::{Renderer, TextEngine};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::core::{EventResponse, Widget, WidgetEvent};
-use hayate_ui::widget::toast::ToastLevel;
-use hayate_ui::widget::TextInputWidget;
+use hayate_platform::render::{Renderer, TextEngine};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::widget::core::{EventResponse, Widget, WidgetEvent};
+use hayate_kit::widget::toast::ToastLevel;
+use hayate_kit::widget::text_input_widget::TextInputWidget;
 
 /// Active rename session.
 pub(crate) struct RenameState {

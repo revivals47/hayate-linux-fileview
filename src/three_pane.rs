@@ -3,11 +3,12 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use hayate_ui::render::{Renderer, TextEngine};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
-use hayate_ui::widget::toast::ToastWidget;
-use hayate_ui::widget::{alloc_widget_id, WidgetId};
+use hayate_platform::render::{Renderer, TextEngine};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_kit::widget::toast::ToastWidget;
+use hayate_platform::widget::widget_id::alloc_widget_id;
+use hayate_platform::widget::focus::WidgetId;
 
 use crate::breadcrumb::BreadcrumbWidget;
 use crate::file_list::FileListWidget;
@@ -57,7 +58,7 @@ pub(crate) struct ThreePaneWidget {
     /// User-fixed preview ratio (None = auto-responsive).
     pub(crate) preview_ratio: Option<f32>,
     /// Shared cursor shape buffer — set to change the mouse cursor.
-    cursor_shape: Option<Rc<Cell<Option<hayate_ui::platform::CursorShape>>>>,
+    cursor_shape: Option<Rc<Cell<Option<hayate_platform::platform::CursorShape>>>>,
     toast: Rc<RefCell<ToastWidget>>,
     focus: PaneFocus,
     tab_bar: crate::tab_bar::TabBar,
@@ -109,11 +110,11 @@ impl ThreePaneWidget {
     }
 
     /// Inject the cursor shape buffer from App (called after construction).
-    pub(crate) fn set_cursor_shape_buffer(&mut self, buf: Rc<Cell<Option<hayate_ui::platform::CursorShape>>>) {
+    pub(crate) fn set_cursor_shape_buffer(&mut self, buf: Rc<Cell<Option<hayate_platform::platform::CursorShape>>>) {
         self.cursor_shape = Some(buf);
     }
 
-    fn set_cursor(&self, shape: hayate_ui::platform::CursorShape) {
+    fn set_cursor(&self, shape: hayate_platform::platform::CursorShape) {
         if let Some(ref buf) = self.cursor_shape {
             buf.set(Some(shape));
         }
@@ -339,7 +340,7 @@ impl Widget for ThreePaneWidget {
                 return EventResponse::Handled;
             }
             // Update cursor shape based on divider hover
-            use hayate_ui::platform::CursorShape;
+            use hayate_platform::platform::CursorShape;
             if self.hit_divider(*x, *y).is_some() {
                 self.set_cursor(CursorShape::ColResize);
             } else {
@@ -350,7 +351,7 @@ impl Widget for ThreePaneWidget {
         // Divider drag: PointerRelease ends drag → persist ratios to state
         if let WidgetEvent::PointerRelease { .. } = event
             && self.dragging.take().is_some() {
-                self.set_cursor(hayate_ui::platform::CursorShape::Default);
+                self.set_cursor(hayate_platform::platform::CursorShape::Default);
                 let state = self.file_list.state().borrow();
                 state.sidebar_ratio.set(self.sidebar_ratio);
                 state.preview_ratio.set(self.preview_ratio);
@@ -359,7 +360,7 @@ impl Widget for ThreePaneWidget {
 
         // PointerLeave → restore default cursor
         if matches!(event, WidgetEvent::PointerLeave) {
-            self.set_cursor(hayate_ui::platform::CursorShape::Default);
+            self.set_cursor(hayate_platform::platform::CursorShape::Default);
         }
 
         if let WidgetEvent::PointerPress { x, y, button, modifiers, .. } = event {
@@ -376,7 +377,7 @@ impl Widget for ThreePaneWidget {
                 && let Some(target) = self.hit_divider(*x, adj_y) {
                     let ow = match target { DragTarget::SidebarRight => self.sidebar_width, DragTarget::PreviewLeft => self.preview_width };
                     self.dragging = Some(DragState { target, start_x: *x, original_width: ow });
-                    self.set_cursor(hayate_ui::platform::CursorShape::ColResize);
+                    self.set_cursor(hayate_platform::platform::CursorShape::ColResize);
                     return EventResponse::Handled;
                 }
             // Breadcrumb bar
@@ -424,7 +425,7 @@ impl Widget for ThreePaneWidget {
                 self.execute_tab_action(action);
                 return EventResponse::Handled;
             }
-            use hayate_ui::platform::keyboard::KeyState;
+            use hayate_platform::platform::keyboard::KeyState;
             if ke.state == KeyState::Pressed {
                 // F6: cycle pane focus
                 if ke.keysym == xkbcommon::xkb::Keysym::F6 {

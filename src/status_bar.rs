@@ -3,10 +3,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use hayate_ui::render::{Renderer, TextEngine};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
-use hayate_ui::widget::{alloc_widget_id, WidgetId};
+use hayate_platform::render::{Renderer, TextEngine};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_platform::widget::widget_id::alloc_widget_id;
+use hayate_platform::widget::focus::WidgetId;
 
 use crate::entry::format_size;
 
@@ -101,7 +102,7 @@ impl Widget for StatusBar {
 
         // Render text on top of background
         if !self.message.is_empty() {
-            use hayate_ui::widget::text_widget::RichTextWidget;
+            use hayate_kit::widget::text_widget::RichTextWidget;
             let (r, g, b) = if self.is_error { (255, 100, 100) } else { (180, 180, 180) };
             let mut text = RichTextWidget::new(self.message.clone(), 11.0)
                 .with_engine(self.engine.clone())

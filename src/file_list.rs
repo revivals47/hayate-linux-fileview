@@ -7,13 +7,14 @@ use std::time::Instant;
 
 use tiny_skia::Color;
 
-use hayate_ui::platform::keyboard::KeyState;
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::scroll::physics::PixelScrollPhysics;
-use hayate_ui::scroll::viewport::VirtualViewport;
-use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
-use hayate_ui::widget::{alloc_widget_id, WidgetId};
+use hayate_platform::platform::keyboard::KeyState;
+use hayate_platform::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::scroll::physics::PixelScrollPhysics;
+use hayate_platform::scroll::viewport::VirtualViewport;
+use hayate_platform::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_platform::widget::widget_id::alloc_widget_id;
+use hayate_platform::widget::focus::WidgetId;
 
 use crate::entry::SortColumn;
 use crate::state::{FileViewState, ViewMode};
@@ -55,9 +56,9 @@ pub(crate) struct FileListWidget {
     pub(crate) search_mode: bool,
     pub(crate) last_file_op: Option<Instant>,
     pub(crate) rename_state: Option<crate::rename_ui::RenameState>,
-    pub(crate) context_menu: hayate_ui::widget::ContextMenu,
+    pub(crate) context_menu: hayate_kit::widget::context_menu::ContextMenu,
     pub(crate) pending_file_paste: bool,
-    pub(crate) toast: Rc<RefCell<hayate_ui::widget::toast::ToastWidget>>,
+    pub(crate) toast: Rc<RefCell<hayate_kit::widget::toast::ToastWidget>>,
     is_dirty: bool,
     /// LRU cache of cosmic_text Buffers keyed by (row_text, font_size_bits).
     pub(crate) text_cache: RefCell<crate::lru_cache::LruCache<(String, u32), cosmic_text::Buffer>>,
@@ -66,7 +67,7 @@ pub(crate) struct FileListWidget {
 impl FileListWidget {
     pub(crate) fn new(
         state: Rc<RefCell<FileViewState>>,
-        toast: Rc<RefCell<hayate_ui::widget::toast::ToastWidget>>,
+        toast: Rc<RefCell<hayate_kit::widget::toast::ToastWidget>>,
     ) -> Self {
         let engine = state.borrow().engine.clone();
         let entry_count = state.borrow().entries.len();

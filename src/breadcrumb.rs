@@ -5,11 +5,12 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use tiny_skia::Color;
-use hayate_ui::platform::keyboard::KeyState;
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
-use hayate_ui::scroll::delegate::ItemRect;
-use hayate_ui::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
-use hayate_ui::widget::{alloc_widget_id, WidgetId};
+use hayate_platform::platform::keyboard::KeyState;
+use hayate_platform::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
+use hayate_platform::scroll::delegate::ItemRect;
+use hayate_platform::widget::core::{Constraints, EventResponse, Size, Widget, WidgetEvent};
+use hayate_platform::widget::widget_id::alloc_widget_id;
+use hayate_platform::widget::focus::WidgetId;
 
 use crate::state::FileViewState;
 
@@ -34,7 +35,7 @@ pub(crate) struct BreadcrumbWidget {
     back_x0: f32, back_x1: f32,
     fwd_x0: f32,  fwd_x1: f32,
     /// Active address bar text input (Ctrl+L).
-    editing: Option<hayate_ui::widget::TextInputWidget>,
+    editing: Option<hayate_kit::widget::text_input_widget::TextInputWidget>,
 }
 
 fn col(r: u8, g: u8, b: u8) -> Color { Color::from_rgba8(r, g, b, 255) }
@@ -94,7 +95,7 @@ impl BreadcrumbWidget {
 
     /// Enter address bar edit mode (Ctrl+L).
     pub(crate) fn start_editing(&mut self) {
-        use hayate_ui::widget::TextInputWidget;
+        use hayate_kit::widget::text_input_widget::TextInputWidget;
         let path_str = self.state.borrow().current_path.display().to_string();
         let mut input = TextInputWidget::new_with_engine(self.engine.clone()).with_width(self.width);
         input.input_mut().insert_str(&path_str);

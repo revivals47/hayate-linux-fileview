@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
-use hayate_ui::scroll::delegate::ItemRect;
+use hayate_platform::render::{FontFamily, Renderer, TextEngine, TextParams, VariableFontAxes};
+use hayate_platform::scroll::delegate::ItemRect;
 use tiny_skia::Color;
 
 use crate::entry::{SortColumn, SortOrder};
@@ -183,8 +183,8 @@ impl TabBar {
     }
 
     /// Handle keyboard shortcuts; returns action.
-    pub(crate) fn handle_key(&self, ke: &hayate_ui::platform::keyboard::KeyEvent) -> TabAction {
-        use hayate_ui::platform::keyboard::KeyState;
+    pub(crate) fn handle_key(&self, ke: &hayate_platform::platform::keyboard::KeyEvent) -> TabAction {
+        use hayate_platform::platform::keyboard::KeyState;
         use xkbcommon::xkb::Keysym;
         if ke.state != KeyState::Pressed { return TabAction::None; }
         if ke.modifiers.ctrl {

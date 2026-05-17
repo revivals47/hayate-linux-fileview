@@ -23,10 +23,10 @@ use std::env;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::app::App;
-use hayate_ui::render::TextEngine;
-use hayate_ui::widget::core::Widget;
-use hayate_ui::widget::{DragZone, VStack};
+use hayate_platform::app::App;
+use hayate_platform::render::TextEngine;
+use hayate_platform::widget::core::Widget;
+use hayate_kit::widget::{DragZone, VStack};
 
 use state::FileViewState;
 use three_pane::ThreePaneWidget;

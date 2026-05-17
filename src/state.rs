@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use hayate_ui::render::TextEngine;
+use hayate_platform::render::TextEngine;
 
 use crate::entry::{DirEntry, SortColumn, SortOrder, read_dir_sorted};
 
